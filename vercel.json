@@ -1,0 +1,6 @@
+{
+  "crons": [
+    { "path": "/api/cron/winback", "schedule": "30 4 * * *" },
+    { "path": "/api/cron/statements", "schedule": "*/5 * * * *" }
+  ]
+}
