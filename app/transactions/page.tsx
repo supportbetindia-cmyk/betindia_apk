@@ -1,7 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useQuery } from '@tanstack/react-query';
 import { Sidebar } from '@/components/Sidebar';
 import type { CSSProperties, ReactNode } from 'react';
 import {
@@ -82,13 +83,27 @@ const money = (n: number) => `₹${n.toLocaleString()}`;
 const statusClass = (status: Row['display_status']) =>
   status === 'approved' ? 's-completed' : status === 'rejected' ? 's-failed' : status === 'pending' ? 's-scheduled' : 's-sent';
 
+async function fetchTransactionData(range: TransactionRangeKey): Promise<Data> {
+  const response = await fetch(`/api/transactions?range=${range}`, { cache: 'no-store' });
+  const body = await response.json() as Data;
+  if (!response.ok) throw new Error(body.error || 'Transaction data is temporarily unavailable');
+  return body;
+}
+
 export default function TransactionsPage() {
   const router = useRouter();
-  const [data, setData] = useState<Data | null>(null);
   const [filter, setFilter] = useState<'all' | 'deposit' | 'withdrawal'>('all');
   const [range, setRange] = useState<TransactionRangeKey>('today');
   const [search, setSearch] = useState('');
   const [visibleCount, setVisibleCount] = useState(50);
+  const transactionQuery = useQuery({
+    queryKey: ['transactions', range],
+    queryFn: () => fetchTransactionData(range),
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
+    placeholderData: (previousData) => previousData,
+  });
+  const data = transactionQuery.data;
 
   const logout = useCallback(async () => {
     await fetch('/api/logout', { method: 'POST' });
@@ -96,33 +111,10 @@ export default function TransactionsPage() {
     router.refresh();
   }, [router]);
 
-  const load = useCallback(async () => {
-    try {
-      const res = await fetch(`/api/transactions?range=${range}`, { cache: 'no-store' });
-      const body = await res.json() as Data;
-      if (!res.ok) {
-        setData((previous) => ({
-          ...(previous ?? { configured: true }),
-          error: body.error || 'Transaction data is temporarily unavailable',
-        }));
-        return;
-      }
-      setData(body);
-    } catch {
-      setData((previous) => ({
-        ...(previous ?? { configured: true }),
-        error: 'Could not connect to the transaction API',
-      }));
-    }
-  }, [range]);
-
-  useEffect(() => {
-    load();
-    const id = setInterval(load, 10000);
-    return () => clearInterval(id);
-  }, [load]);
-
   const s = data?.summary;
+  const queryError = transactionQuery.error instanceof Error
+    ? transactionQuery.error.message
+    : data?.error;
   const normalizedSearch = search.trim().toLowerCase();
   const filteredRows = (data?.recent ?? []).filter((row) => {
     if (filter !== 'all' && row.type !== filter) return false;
@@ -136,7 +128,7 @@ export default function TransactionsPage() {
     ].some((value) => value?.toLowerCase().includes(normalizedSearch));
   });
   const rows = filteredRows.slice(0, visibleCount);
-  const notSetup = data && data.configured === false;
+  const notSetup = data?.configured === false;
 
   return (
     <div className="shell">
@@ -168,8 +160,8 @@ export default function TransactionsPage() {
           </div>
         </header>
 
-        {data?.error && data.configured !== false ? (
-          <div className="banner2">Transaction data error: {data.error}. Showing the last successful result when available.</div>
+        {queryError && data?.configured !== false ? (
+          <div className="banner2">Transaction data error: {queryError}. Showing the last successful result when available.</div>
         ) : null}
 
         {data?.statement && !data.statement.configured ? (

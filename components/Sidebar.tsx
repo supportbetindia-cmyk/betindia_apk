@@ -7,6 +7,7 @@ import {
   BellRing,
   CreditCard,
   MessageCircleMore,
+  Zap,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -16,6 +17,7 @@ const NAV = [
   { icon: CreditCard, label: 'Transactions', href: '/transactions' },
   { icon: BellRing, label: 'Push Notifications', href: '/notifications' },
   { icon: MessageCircleMore, label: 'WhatsApp CRM', href: '/whatsapp' },
+  { icon: Zap, label: 'Automations', href: '/automations' },
 ] satisfies Array<{ icon: LucideIcon; label: string; href: string }>;
 
 export function Sidebar({

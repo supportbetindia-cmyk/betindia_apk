@@ -10,7 +10,7 @@ export type SelectedSyncBatch = {
   reachedEnd: boolean;
 };
 
-/** Select the next alphabetical slice so server restarts never reset coverage. */
+
 export function selectStatementSyncBatch(
   userIds: string[],
   cursor: SyncCursor,

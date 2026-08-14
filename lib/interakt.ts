@@ -14,12 +14,19 @@ export function interaktConfigured(): boolean {
 }
 
 async function interaktFetch(path: string, body: unknown): Promise<Response> {
-  return fetch(`${BASE}${path}`, {
-    method: 'POST',
-    headers: { Authorization: `Basic ${API_KEY}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-    cache: 'no-store',
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 12_000);
+  try {
+    return await fetch(`${BASE}${path}`, {
+      method: 'POST',
+      headers: { Authorization: `Basic ${API_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      cache: 'no-store',
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 export type SendTemplateInput = {

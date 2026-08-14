@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { saveTransaction, parseWebhookBody, logWebhookHit } from '@/lib/wati';
+import { queueTransactionAutomation } from '@/lib/automations';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,6 +23,7 @@ export async function POST(req: Request) {
   try {
     await saveTransaction('deposit', body);
     await logWebhookHit({ source: 'deposit', method: 'POST', contentType: ct, tokenOk, status: 200, ip, raw: body });
+    await queueTransactionAutomation('deposit', body);
     return NextResponse.json({ ok: true });
   } catch (err) {
     await logWebhookHit({ source: 'deposit', method: 'POST', contentType: ct, tokenOk, status: 500, ip, raw: body });
