@@ -1,4 +1,5 @@
 import { sendWhatsAppTemplate } from './interakt';
+import { isAutomationEnabled } from './settings';
 import {
   buildAutomationMessage,
   type TransactionAutomationType,
@@ -38,9 +39,6 @@ function requireSupabase(): { url: string; key: string } {
   return { url: SUPABASE_URL, key: SERVICE_ROLE };
 }
 
-export function automationEnabled(): boolean {
-  return process.env.AUTOMATION_ENABLED === 'true';
-}
 
 /** Persist an automation event before acknowledging the payment webhook. */
 export async function queueTransactionAutomation(
@@ -50,7 +48,7 @@ export async function queueTransactionAutomation(
   const message = buildAutomationMessage(type, body);
   if (!message) return { accepted: false, duplicate: false, skipped: true };
   const { url } = requireSupabase();
-  const enabled = automationEnabled();
+  const enabled = await isAutomationEnabled(type);
   const response = await fetch(`${url}/rest/v1/message_log?on_conflict=event_key`, {
     method: 'POST',
     headers: supabaseHeaders({
@@ -125,7 +123,7 @@ export async function processAutomationQueue(options: {
   limit?: number;
   maxAttempts?: number;
 } = {}): Promise<{ claimed: number; sent: number; failed: number }> {
-  if (!automationEnabled()) return { claimed: 0, sent: 0, failed: 0 };
+  if (!(await isAutomationEnabled())) return { claimed: 0, sent: 0, failed: 0 };
   const maxAttempts = options.maxAttempts ?? DEFAULT_MAX_ATTEMPTS;
   const rows = await claimMessages(options.limit ?? 10, maxAttempts);
   let sent = 0;

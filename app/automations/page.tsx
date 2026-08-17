@@ -2,10 +2,11 @@
 
 import { useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { Sidebar } from '@/components/Sidebar';
 
 type Rule = { event: string; template: string; trigger: string };
+type Toggles = { enabled: boolean; deposit: boolean; withdrawal: boolean };
 type LogRow = {
   id: number;
   template: string | null;
@@ -18,6 +19,7 @@ type LogRow = {
 };
 type Data = {
   enabled: boolean;
+  toggles?: Toggles;
   interaktConfigured: boolean;
   rules: Rule[];
   needsSetup: boolean;
@@ -31,6 +33,50 @@ async function fetchAutomationData(): Promise<Data> {
   return body;
 }
 
+function ToggleSwitch({ on, onChange, disabled, label }: {
+  on: boolean;
+  onChange: (next: boolean) => void;
+  disabled?: boolean;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      aria-label={label}
+      disabled={disabled}
+      onClick={() => onChange(!on)}
+      style={{
+        width: 54,
+        height: 30,
+        borderRadius: 999,
+        background: on ? 'var(--green, #16a34a)' : '#c3cad8',
+        border: 'none',
+        position: 'relative',
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.45 : 1,
+        transition: 'background .2s',
+        flexShrink: 0,
+      }}
+    >
+      <span
+        style={{
+          position: 'absolute',
+          top: 3,
+          left: on ? 27 : 3,
+          width: 24,
+          height: 24,
+          borderRadius: '50%',
+          background: '#fff',
+          transition: 'left .2s',
+          boxShadow: '0 1px 3px rgba(0,0,0,.35)',
+        }}
+      />
+    </button>
+  );
+}
+
 export default function AutomationsPage() {
   const router = useRouter();
   const automationQuery = useQuery({
@@ -41,6 +87,20 @@ export default function AutomationsPage() {
   });
   const data = automationQuery.data;
 
+  const toggleMutation = useMutation({
+    mutationFn: async (vars: { key: string; value: boolean }) => {
+      const response = await fetch('/api/automations/toggle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(vars),
+      });
+      const body = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(body.error || 'Could not update the switch');
+      return body;
+    },
+    onSuccess: () => automationQuery.refetch(),
+  });
+
   const logout = useCallback(async () => {
     await fetch('/api/logout', { method: 'POST' });
     router.replace('/login');
@@ -49,9 +109,19 @@ export default function AutomationsPage() {
 
   const enabled = data?.enabled;
   const interakt = data?.interaktConfigured;
+  const tog: Toggles = data?.toggles ?? { enabled: Boolean(enabled), deposit: true, withdrawal: true };
+  const busy = toggleMutation.isPending;
   const queryError = automationQuery.error instanceof Error
     ? automationQuery.error.message
     : null;
+  const toggleError = toggleMutation.error instanceof Error ? toggleMutation.error.message : null;
+
+  const toggleMaster = (next: boolean) => {
+    if (!next && !window.confirm('Turn OFF all WhatsApp automation?\n\nNo deposit or withdrawal messages will be sent until you turn it back on.')) {
+      return;
+    }
+    toggleMutation.mutate({ key: 'automation_enabled', value: next });
+  };
 
   return (
     <div className="shell">
@@ -70,16 +140,19 @@ export default function AutomationsPage() {
         {queryError ? (
           <div className="banner2">Automation data error: {queryError}. Showing the last successful result when available.</div>
         ) : null}
+        {toggleError ? (
+          <div className="banner2">Could not save the switch: {toggleError}. Try again.</div>
+        ) : null}
 
         {/* STATUS */}
         <div className="kpi-grid" style={{ gridTemplateColumns: 'repeat(2, 1fr)' }}>
           <div className="kpi" style={{ display: 'block' }}>
             <div className="kpi-label">Automation status</div>
             <div className="kpi-value" style={{ color: enabled ? 'var(--green)' : '#e5484d' }}>
-              {enabled ? '● LIVE' : '○ OFF (safe mode)'}
+              {enabled ? '● LIVE' : '○ OFF (paused)'}
             </div>
             <div className="kpi-delta">
-              <span className="kpi-vs">{enabled ? 'sending real messages' : 'logging only — set AUTOMATION_ENABLED=true to go live'}</span>
+              <span className="kpi-vs">{enabled ? 'sending real messages' : 'paused — no messages are being sent'}</span>
             </div>
           </div>
           <div className="kpi" style={{ display: 'block' }}>
@@ -88,6 +161,53 @@ export default function AutomationsPage() {
               {interakt ? '● Connected' : '○ Not configured'}
             </div>
             <div className="kpi-delta"><span className="kpi-vs">{interakt ? 'API key set' : 'add INTERAKT_API_KEY'}</span></div>
+          </div>
+        </div>
+
+        {/* CONTROL PANEL */}
+        <div className="panel">
+          <div className="panel-head">
+            <h3>Control Panel</h3>
+            <span className="panel-tag">turn automation on / off</span>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 18, padding: '6px 2px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 16 }}>Master switch — all WhatsApp automation</div>
+                <div className="kpi-vs" style={{ color: tog.enabled ? 'var(--green)' : '#e5484d' }}>
+                  {tog.enabled ? 'ON — messages are being sent' : 'OFF — nothing will be sent'}
+                </div>
+              </div>
+              <ToggleSwitch on={tog.enabled} disabled={busy} label="Master automation switch" onChange={toggleMaster} />
+            </div>
+
+            <div style={{ height: 1, background: 'rgba(13,18,41,.1)' }} />
+
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, opacity: tog.enabled ? 1 : 0.5 }}>
+              <div>
+                <div style={{ fontWeight: 600 }}>Deposit messages</div>
+                <div className="kpi-vs">Send a WhatsApp when a deposit comes in</div>
+              </div>
+              <ToggleSwitch
+                on={tog.deposit}
+                disabled={busy || !tog.enabled}
+                label="Deposit messages switch"
+                onChange={(value) => toggleMutation.mutate({ key: 'automation_deposit', value })}
+              />
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, opacity: tog.enabled ? 1 : 0.5 }}>
+              <div>
+                <div style={{ fontWeight: 600 }}>Withdrawal messages</div>
+                <div className="kpi-vs">Send a WhatsApp when a withdrawal comes in</div>
+              </div>
+              <ToggleSwitch
+                on={tog.withdrawal}
+                disabled={busy || !tog.enabled}
+                label="Withdrawal messages switch"
+                onChange={(value) => toggleMutation.mutate({ key: 'automation_withdrawal', value })}
+              />
+            </div>
           </div>
         </div>
 
@@ -136,7 +256,8 @@ export default function AutomationsPage() {
         </div>
 
         <div className="footer-note">
-          Setup: run <b>sql/message_log.sql</b> in Supabase, add <b>INTERAKT_API_KEY</b>, set <b>AUTOMATION_ENABLED=true</b> in Hostinger, and call <b>/api/cron/automations</b> every minute with the cron bearer token.
+          Use the <b>Control Panel</b> switches above to turn automation on or off instantly — no redeploy needed.
+          A per-minute cron drains the queue and sends each WhatsApp; the master switch pauses all sending at once.
         </div>
       </main>
     </div>

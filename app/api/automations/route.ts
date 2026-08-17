@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { interaktConfigured } from '@/lib/interakt';
-import { automationEnabled } from '@/lib/automations';
+import { getAutomationSettings } from '@/lib/settings';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -9,8 +9,8 @@ const SUPABASE_URL = process.env.SUPABASE_URL;
 const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 const RULES = [
-  { event: 'Deposit received', template: 'betindia_deposit_status_update', trigger: 'durable queue' },
-  { event: 'Withdrawal received', template: 'betindia_withdrawal_status_update', trigger: 'durable queue' },
+  { event: 'Deposit received', template: 'betindia_deposit_status_update', trigger: 'auto WhatsApp' },
+  { event: 'Withdrawal received', template: 'betindia_withdrawal_status_update', trigger: 'auto WhatsApp' },
 ];
 
 async function fetchLog() {
@@ -29,9 +29,14 @@ async function fetchLog() {
 }
 
 export async function GET() {
-  const { logs, needsSetup } = await fetchLog();
+  const [{ logs, needsSetup }, settings] = await Promise.all([fetchLog(), getAutomationSettings()]);
   return NextResponse.json({
-    enabled: automationEnabled(),
+    enabled: settings.enabled,
+    toggles: {
+      enabled: settings.enabled,
+      deposit: settings.deposit,
+      withdrawal: settings.withdrawal,
+    },
     interaktConfigured: interaktConfigured(),
     rules: RULES,
     needsSetup,

@@ -23,7 +23,12 @@ export async function POST(req: Request) {
   try {
     await saveTransaction('deposit', body);
     await logWebhookHit({ source: 'deposit', method: 'POST', contentType: ct, tokenOk, status: 200, ip, raw: body });
-    await queueTransactionAutomation('deposit', body);
+    // Best-effort: a queue error must never fail the webhook ack or trigger retries.
+    try {
+      await queueTransactionAutomation('deposit', body);
+    } catch (autoErr) {
+      console.error('[wati/deposit] automation queue failed:', autoErr);
+    }
     return NextResponse.json({ ok: true });
   } catch (err) {
     await logWebhookHit({ source: 'deposit', method: 'POST', contentType: ct, tokenOk, status: 500, ip, raw: body });
