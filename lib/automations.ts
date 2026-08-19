@@ -1,7 +1,8 @@
 import { sendWhatsAppTemplate } from './interakt';
-import { isAutomationEnabled } from './settings';
+import { isAutomationEnabled, getCronLastRun } from './settings';
 import {
   buildAutomationMessage,
+  describeSkippedMessage,
   type TransactionAutomationType,
 } from './automation-message';
 
@@ -40,43 +41,70 @@ function requireSupabase(): { url: string; key: string } {
 }
 
 
-/** Persist an automation event before acknowledging the payment webhook. */
-export async function queueTransactionAutomation(
-  type: TransactionAutomationType,
-  body: Record<string, unknown>
-): Promise<{ accepted: boolean; duplicate: boolean; skipped: boolean }> {
-  const message = buildAutomationMessage(type, body);
-  if (!message) return { accepted: false, duplicate: false, skipped: true };
-  const { url } = requireSupabase();
-  const enabled = await isAutomationEnabled(type);
+/** Insert one message_log row, ignoring duplicates on event_key. Returns whether
+ * a new row was actually created (false = duplicate webhook, already logged). */
+async function insertMessageRow(url: string, row: Record<string, unknown>): Promise<boolean> {
   const response = await fetch(`${url}/rest/v1/message_log?on_conflict=event_key`, {
     method: 'POST',
     headers: supabaseHeaders({
       'Content-Type': 'application/json',
       Prefer: 'resolution=ignore-duplicates,return=representation',
     }),
-    body: JSON.stringify({
-      event_key: message.eventKey,
-      channel: 'whatsapp',
-      template: message.templateName,
-      event_type: message.type,
-      transaction_id: message.transactionId || null,
-      transaction_status: message.transactionStatus || null,
-      mobile: message.mobile,
-      user_id: message.userId || null,
-      payload: {
-        countryCode: message.countryCode,
-        bodyValues: message.bodyValues,
-      },
-      status: enabled ? 'queued' : 'skipped',
-      detail: enabled ? 'Waiting for delivery' : 'Preview only: automation is disabled',
-    }),
+    body: JSON.stringify(row),
   });
   if (!response.ok) {
     throw new Error(`Automation queue insert failed ${response.status}: ${(await response.text()).slice(0, 200)}`);
   }
-  const rows = await response.json() as QueueRow[];
-  return { accepted: rows.length > 0, duplicate: rows.length === 0, skipped: !enabled };
+  const rows = await response.json() as unknown[];
+  return rows.length > 0;
+}
+
+/** Persist an automation event before acknowledging the payment webhook. A
+ * transaction that can't be messaged (e.g. no valid phone) is still recorded as
+ * "skipped" so a dropped message is never invisible. */
+export async function queueTransactionAutomation(
+  type: TransactionAutomationType,
+  body: Record<string, unknown>
+): Promise<{ accepted: boolean; duplicate: boolean; skipped: boolean }> {
+  const { url } = requireSupabase();
+  const message = buildAutomationMessage(type, body);
+
+  if (!message) {
+    const skip = describeSkippedMessage(type, body, 'no_valid_phone');
+    await insertMessageRow(url, {
+      event_key: skip.eventKey,
+      channel: 'whatsapp',
+      template: skip.templateName,
+      event_type: skip.type,
+      transaction_id: skip.transactionId || null,
+      transaction_status: skip.transactionStatus || null,
+      mobile: skip.mobile,
+      user_id: skip.userId || null,
+      payload: {},
+      status: 'skipped',
+      detail: 'No valid phone number on this transaction',
+    });
+    return { accepted: false, duplicate: false, skipped: true };
+  }
+
+  const enabled = await isAutomationEnabled(type);
+  const inserted = await insertMessageRow(url, {
+    event_key: message.eventKey,
+    channel: 'whatsapp',
+    template: message.templateName,
+    event_type: message.type,
+    transaction_id: message.transactionId || null,
+    transaction_status: message.transactionStatus || null,
+    mobile: message.mobile,
+    user_id: message.userId || null,
+    payload: {
+      countryCode: message.countryCode,
+      bodyValues: message.bodyValues,
+    },
+    status: enabled ? 'queued' : 'skipped',
+    detail: enabled ? 'Waiting for delivery' : 'Preview only: automation is disabled',
+  });
+  return { accepted: inserted, duplicate: !inserted, skipped: !enabled };
 }
 
 async function claimMessages(limit: number, maxAttempts: number): Promise<QueueRow[]> {
@@ -171,4 +199,67 @@ export async function processAutomationQueue(options: {
   }
 
   return { claimed: rows.length, sent, failed };
+}
+
+export type QueueHealth = {
+  queued: number;
+  failed: number;
+  oldestQueuedAgeMin: number | null;
+  lastCronRun: string | null;
+  cronAgeMin: number | null;
+  warning: string | null;
+};
+
+/** Count rows in one status via PostgREST's exact count header. */
+async function countStatus(url: string, status: string): Promise<number> {
+  const res = await fetch(`${url}/rest/v1/message_log?status=eq.${status}&select=id&limit=1`, {
+    headers: supabaseHeaders({ Prefer: 'count=exact' }),
+    cache: 'no-store',
+  });
+  if (!res.ok) return 0;
+  const total = res.headers.get('content-range')?.split('/')[1];
+  return total && total !== '*' ? Number(total) : 0;
+}
+
+async function oldestQueuedAt(url: string): Promise<string | null> {
+  const res = await fetch(
+    `${url}/rest/v1/message_log?status=eq.queued&select=created_at&order=created_at.asc&limit=1`,
+    { headers: supabaseHeaders(), cache: 'no-store' },
+  );
+  if (!res.ok) return null;
+  const rows = await res.json() as Array<{ created_at: string }>;
+  return rows[0]?.created_at ?? null;
+}
+
+const STALE_MINUTES = 5;
+
+/** Surface a stalled cron / piling backlog so a stopped scheduler is obvious. */
+export async function getQueueHealth(): Promise<QueueHealth> {
+  const empty: QueueHealth = { queued: 0, failed: 0, oldestQueuedAgeMin: null, lastCronRun: null, cronAgeMin: null, warning: null };
+  if (!SUPABASE_URL || !SERVICE_ROLE) return empty;
+  const { url } = requireSupabase();
+
+  const [queued, failed, oldest, lastCronRun, enabled] = await Promise.all([
+    countStatus(url, 'queued'),
+    countStatus(url, 'failed'),
+    oldestQueuedAt(url),
+    getCronLastRun(),
+    isAutomationEnabled(),
+  ]);
+
+  const now = Date.now();
+  const minsSince = (iso: string | null) => (iso ? Math.floor((now - new Date(iso).getTime()) / 60_000) : null);
+  const cronAgeMin = minsSince(lastCronRun);
+  const oldestQueuedAgeMin = minsSince(oldest);
+
+  let warning: string | null = null;
+  if (enabled && queued > 0 && (oldestQueuedAgeMin ?? 0) >= STALE_MINUTES) {
+    warning = `${queued} message${queued === 1 ? '' : 's'} have been waiting ${oldestQueuedAgeMin} min without sending — the cron isn't draining the queue. Check your cron-job.org job for /api/cron/automations.`;
+  } else if (lastCronRun && (cronAgeMin ?? 0) >= STALE_MINUTES) {
+    warning = `The sender cron hasn't run in ${cronAgeMin} min. New messages will pile up until it resumes — check cron-job.org.`;
+  } else if (!lastCronRun) {
+    warning = 'The sender cron has not run yet. Set up a cron-job.org job hitting /api/cron/automations every minute.';
+  }
+
+  return { queued, failed, oldestQueuedAgeMin, lastCronRun, cronAgeMin, warning };
 }

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { interaktConfigured } from '@/lib/interakt';
-import { getAutomationSettings } from '@/lib/settings';
+import { getAllToggles } from '@/lib/settings';
+import { getQueueHealth } from '@/lib/automations';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -29,14 +30,15 @@ async function fetchLog() {
 }
 
 export async function GET() {
-  const [{ logs, needsSetup }, settings] = await Promise.all([fetchLog(), getAutomationSettings()]);
+  const [{ logs, needsSetup }, toggles, health] = await Promise.all([
+    fetchLog(),
+    getAllToggles(),
+    getQueueHealth(),
+  ]);
   return NextResponse.json({
-    enabled: settings.enabled,
-    toggles: {
-      enabled: settings.enabled,
-      deposit: settings.deposit,
-      withdrawal: settings.withdrawal,
-    },
+    enabled: toggles.enabled,
+    toggles,
+    health,
     interaktConfigured: interaktConfigured(),
     rules: RULES,
     needsSetup,

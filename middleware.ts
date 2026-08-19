@@ -2,8 +2,7 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { SESSION_COOKIE, verifySession } from '@/lib/auth';
 
-// Gate every matched route on a valid session cookie. Unauthenticated requests
-// are redirected to /login (page requests) or rejected 401 (API requests).
+
 export async function middleware(req: NextRequest) {
   const token = req.cookies.get(SESSION_COOKIE)?.value;
   const authed = await verifySession(token);

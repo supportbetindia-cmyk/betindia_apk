@@ -29,9 +29,15 @@ function pick(obj: Record<string, unknown>, ...keys: string[]): string {
 
 export function normalizePhone(raw: string): { countryCode: string; phoneNumber: string } | null {
   const digits = raw.replace(/\D/g, '');
-  if (digits.length === 12 && digits.startsWith('91')) return { countryCode: '+91', phoneNumber: digits.slice(2) };
-  if (digits.length === 10) return { countryCode: '+91', phoneNumber: digits };
-  return null;
+  let local: string | null = null;
+  if (digits.length === 10) local = digits;
+  else if (digits.length === 11 && digits.startsWith('0')) local = digits.slice(1);
+  else if (digits.length === 12 && digits.startsWith('91')) local = digits.slice(2);
+  else if (digits.length === 13 && digits.startsWith('910')) local = digits.slice(3);
+  else if (digits.length > 10) local = digits.slice(-10); // best-effort: last 10 digits
+  // Indian mobile numbers are exactly 10 digits and start 6-9.
+  if (!local || !/^[6-9]\d{9}$/.test(local)) return null;
+  return { countryCode: '+91', phoneNumber: local };
 }
 
 function statusLine(type: TransactionAutomationType, status: string): string {
@@ -114,6 +120,39 @@ export function buildAutomationMessage(
     countryCode: phone.countryCode,
     userId,
     bodyValues,
+  };
+}
+
+export type SkippedDescriptor = {
+  type: TransactionAutomationType;
+  templateName: string;
+  eventKey: string;
+  transactionId: string;
+  transactionStatus: string;
+  mobile: string;
+  userId: string;
+};
+
+/** Build enough context to log a *dropped* event (e.g. an unusable phone number)
+ * so it never disappears silently. Deduped by a distinct "skipped:" event key. */
+export function describeSkippedMessage(
+  type: TransactionAutomationType,
+  body: Record<string, unknown>,
+  reason: string
+): SkippedDescriptor {
+  const mobile = pick(body, 'mobile_number', 'Mobile_number');
+  const userId = pick(body, 'user_id', 'User_id');
+  const transactionId = pick(body, 'Transaction_id', 'transaction_id');
+  const transactionStatus = pick(body, 'payment_status', 'Payment_status');
+  const templateName = TEMPLATES[type];
+  return {
+    type,
+    templateName,
+    eventKey: automationEventKey(type, transactionId, `skipped:${reason}`, templateName, body),
+    transactionId,
+    transactionStatus,
+    mobile: mobile || 'unknown',
+    userId,
   };
 }
 

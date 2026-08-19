@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { osConfigured, sendToInactive } from '@/lib/onesignal';
+import { isWinbackEnabled } from '@/lib/settings';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,6 +12,9 @@ export async function GET(req: Request) {
   const auth = req.headers.get('authorization');
   if (!process.env.CRON_SECRET || auth !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+  }
+  if (!(await isWinbackEnabled())) {
+    return NextResponse.json({ ran: false, skipped: true, reason: 'win-back disabled from dashboard' });
   }
   if (!osConfigured()) {
     return NextResponse.json({ error: 'OneSignal not configured' }, { status: 503 });

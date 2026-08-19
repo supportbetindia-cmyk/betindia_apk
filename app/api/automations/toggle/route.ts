@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server';
-import { AUTOMATION_KEYS, setSetting, getAutomationSettings, type AutomationKey } from '@/lib/settings';
+import { TOGGLE_KEYS, setSetting, getAllToggles, type ToggleKey } from '@/lib/settings';
 
 export const dynamic = 'force-dynamic';
 
-// Flip one automation switch. Protected by the dashboard session (middleware
-// gates every /api route except login/wati/cron), so only a logged-in admin
-// reaches this. Body: { key: 'automation_enabled'|'automation_deposit'|'automation_withdrawal', value: boolean }.
+// Flip one switch. Protected by the dashboard session (middleware gates every
+// /api route except login/wati/cron), so only a logged-in admin reaches this.
+// Body: { key: <one of TOGGLE_KEYS>, value: boolean }.
 export async function POST(req: Request) {
   let body: { key?: string; value?: unknown };
   try {
@@ -15,17 +15,17 @@ export async function POST(req: Request) {
   }
 
   const key = body.key;
-  if (!key || !AUTOMATION_KEYS.includes(key as AutomationKey)) {
-    return NextResponse.json({ error: `key must be one of: ${AUTOMATION_KEYS.join(', ')}` }, { status: 400 });
+  if (!key || !TOGGLE_KEYS.includes(key as ToggleKey)) {
+    return NextResponse.json({ error: `key must be one of: ${TOGGLE_KEYS.join(', ')}` }, { status: 400 });
   }
   if (typeof body.value !== 'boolean') {
     return NextResponse.json({ error: 'value must be true or false' }, { status: 400 });
   }
 
   try {
-    await setSetting(key as AutomationKey, body.value);
-    const settings = await getAutomationSettings();
-    return NextResponse.json({ ok: true, toggles: settings });
+    await setSetting(key as ToggleKey, body.value);
+    const toggles = await getAllToggles();
+    return NextResponse.json({ ok: true, toggles });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });
   }

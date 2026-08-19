@@ -6,7 +6,21 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { Sidebar } from '@/components/Sidebar';
 
 type Rule = { event: string; template: string; trigger: string };
-type Toggles = { enabled: boolean; deposit: boolean; withdrawal: boolean };
+type Toggles = {
+  enabled: boolean;
+  deposit: boolean;
+  withdrawal: boolean;
+  winback: boolean;
+  statement: boolean;
+};
+type Health = {
+  queued: number;
+  failed: number;
+  oldestQueuedAgeMin: number | null;
+  lastCronRun: string | null;
+  cronAgeMin: number | null;
+  warning: string | null;
+};
 type LogRow = {
   id: number;
   template: string | null;
@@ -20,6 +34,7 @@ type LogRow = {
 type Data = {
   enabled: boolean;
   toggles?: Toggles;
+  health?: Health;
   interaktConfigured: boolean;
   rules: Rule[];
   needsSetup: boolean;
@@ -109,7 +124,8 @@ export default function AutomationsPage() {
 
   const enabled = data?.enabled;
   const interakt = data?.interaktConfigured;
-  const tog: Toggles = data?.toggles ?? { enabled: Boolean(enabled), deposit: true, withdrawal: true };
+  const tog: Toggles = data?.toggles ?? { enabled: Boolean(enabled), deposit: true, withdrawal: true, winback: true, statement: true };
+  const health = data?.health;
   const busy = toggleMutation.isPending;
   const queryError = automationQuery.error instanceof Error
     ? automationQuery.error.message
@@ -143,6 +159,11 @@ export default function AutomationsPage() {
         {toggleError ? (
           <div className="banner2">Could not save the switch: {toggleError}. Try again.</div>
         ) : null}
+        {health?.warning ? (
+          <div className="banner2" style={{ borderColor: '#e5484d', color: '#e5484d' }}>
+            ⚠ {health.warning}
+          </div>
+        ) : null}
 
         {/* STATUS */}
         <div className="kpi-grid" style={{ gridTemplateColumns: 'repeat(2, 1fr)' }}>
@@ -161,6 +182,25 @@ export default function AutomationsPage() {
               {interakt ? '● Connected' : '○ Not configured'}
             </div>
             <div className="kpi-delta"><span className="kpi-vs">{interakt ? 'API key set' : 'add INTERAKT_API_KEY'}</span></div>
+          </div>
+        </div>
+
+        {/* QUEUE HEALTH */}
+        <div className="kpi-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
+          <div className="kpi" style={{ display: 'block' }}>
+            <div className="kpi-label">Waiting to send</div>
+            <div className="kpi-value" style={{ color: (health?.queued ?? 0) > 0 ? '#ca8a04' : 'var(--green)' }}>{health?.queued ?? 0}</div>
+            <div className="kpi-delta"><span className="kpi-vs">{(health?.queued ?? 0) > 0 ? `oldest ${health?.oldestQueuedAgeMin ?? 0} min` : 'queue empty'}</span></div>
+          </div>
+          <div className="kpi" style={{ display: 'block' }}>
+            <div className="kpi-label">Failed</div>
+            <div className="kpi-value" style={{ color: (health?.failed ?? 0) > 0 ? '#e5484d' : 'var(--green)' }}>{health?.failed ?? 0}</div>
+            <div className="kpi-delta"><span className="kpi-vs">after all retries</span></div>
+          </div>
+          <div className="kpi" style={{ display: 'block' }}>
+            <div className="kpi-label">Sender cron last ran</div>
+            <div className="kpi-value" style={{ fontSize: 18 }}>{health?.lastCronRun ? new Date(health.lastCronRun).toLocaleTimeString() : '—'}</div>
+            <div className="kpi-delta"><span className="kpi-vs">{health?.lastCronRun ? `${health?.cronAgeMin ?? 0} min ago` : 'never — set up cron'}</span></div>
           </div>
         </div>
 
@@ -206,6 +246,41 @@ export default function AutomationsPage() {
                 disabled={busy || !tog.enabled}
                 label="Withdrawal messages switch"
                 onChange={(value) => toggleMutation.mutate({ key: 'automation_withdrawal', value })}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* OTHER AUTOMATIONS */}
+        <div className="panel">
+          <div className="panel-head">
+            <h3>Other Automations</h3>
+            <span className="panel-tag">push &amp; sync</span>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 18, padding: '6px 2px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+              <div>
+                <div style={{ fontWeight: 600 }}>Win-back push (daily)</div>
+                <div className="kpi-vs">Push notification to players who haven&apos;t opened the app in a while</div>
+              </div>
+              <ToggleSwitch
+                on={tog.winback}
+                disabled={busy}
+                label="Win-back push switch"
+                onChange={(value) => toggleMutation.mutate({ key: 'winback_enabled', value })}
+              />
+            </div>
+            <div style={{ height: 1, background: 'rgba(13,18,41,.1)' }} />
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+              <div>
+                <div style={{ fontWeight: 600 }}>Statement sync (every 5 min)</div>
+                <div className="kpi-vs">Reconcile withdrawals/deposits against the wallet statement for accurate totals</div>
+              </div>
+              <ToggleSwitch
+                on={tog.statement}
+                disabled={busy}
+                label="Statement sync switch"
+                onChange={(value) => toggleMutation.mutate({ key: 'statement_enabled', value })}
               />
             </div>
           </div>
