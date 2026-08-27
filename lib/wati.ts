@@ -161,7 +161,7 @@ export async function fetchWebhookLogs(limit = 50): Promise<Record<string, unkno
   if (!SUPABASE_URL || !SERVICE_ROLE) throw new Error('Supabase not configured');
   const params = new URLSearchParams({
     select: '*',
-    source: 'in.(deposit,withdrawal)',
+    source: 'in.(deposit,withdrawal,update)',
     order: 'created_at.desc',
     limit: String(limit),
   });
@@ -184,6 +184,26 @@ export async function fetchTransactions(limit = 200): Promise<TransactionRow[]> 
   });
   if (!res.ok) throw new Error(`Supabase read failed ${res.status}: ${(await res.text()).slice(0, 200)}`);
   return (await res.json()) as TransactionRow[];
+}
+
+/** Look up the stored type of a transaction by its id. The single Transaction
+ * Update webhook doesn't say deposit vs withdrawal — but we recorded the type when
+ * the transaction was first created, so we read it back here. */
+export async function findTransactionType(transactionId: string): Promise<TxnType | null> {
+  if (!SUPABASE_URL || !SERVICE_ROLE) throw new Error('Supabase not configured');
+  const params = new URLSearchParams({
+    select: 'type',
+    transaction_id: `eq.${transactionId}`,
+    order: 'created_at.desc',
+    limit: '1',
+  });
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/transactions?${params.toString()}`, {
+    headers: supabaseHeaders(),
+    cache: 'no-store',
+  });
+  if (!res.ok) throw new Error(`Supabase type lookup failed ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  const rows = (await res.json()) as Array<{ type: TxnType }>;
+  return rows[0]?.type ?? null;
 }
 
 /** Read every distinct user known from transaction webhooks. */

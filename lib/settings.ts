@@ -9,8 +9,9 @@ export type AutomationSettings = {
 };
 
 export type AllToggles = AutomationSettings & {
-  winback: boolean;      // daily win-back push
-  statement: boolean;    // statement reconciliation sync
+  winback: boolean;         // daily win-back push
+  statement: boolean;       // statement reconciliation sync
+  depositFinalOnly: boolean; // hold deposit WhatsApp until a final (approved/rejected) status
 };
 
 // Every switch the dashboard is allowed to flip. The toggle endpoint validates
@@ -21,6 +22,7 @@ export const TOGGLE_KEYS = [
   'automation_withdrawal',
   'winback_enabled',
   'statement_enabled',
+  'deposit_final_only',
 ] as const;
 export type ToggleKey = (typeof TOGGLE_KEYS)[number];
 
@@ -78,6 +80,7 @@ export async function getAllToggles(): Promise<AllToggles> {
     withdrawal: boolOf(s, 'automation_withdrawal', true),
     winback: boolOf(s, 'winback_enabled', true),
     statement: boolOf(s, 'statement_enabled', true),
+    depositFinalOnly: boolOf(s, 'deposit_final_only', false),
   };
 }
 
@@ -96,6 +99,12 @@ export async function isWinbackEnabled(): Promise<boolean> {
 
 export async function isStatementEnabled(): Promise<boolean> {
   return boolOf(await loadSettings(), 'statement_enabled', true);
+}
+
+/** OFF by default: deposits send on every status. Turn ON only once the
+ * Transaction Update webhook is live, to hold the message until final status. */
+export async function isDepositFinalOnly(): Promise<boolean> {
+  return boolOf(await loadSettings(), 'deposit_final_only', false);
 }
 
 async function upsertSetting(key: string, value: string): Promise<void> {

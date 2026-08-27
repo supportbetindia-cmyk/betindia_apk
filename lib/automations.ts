@@ -1,8 +1,9 @@
 import { sendWhatsAppTemplate } from './interakt';
-import { isAutomationEnabled, getCronLastRun } from './settings';
+import { isAutomationEnabled, isDepositFinalOnly, getCronLastRun } from './settings';
 import {
   buildAutomationMessage,
   describeSkippedMessage,
+  type AutomationMessage,
   type TransactionAutomationType,
 } from './automation-message';
 
@@ -41,9 +42,18 @@ function requireSupabase(): { url: string; key: string } {
 }
 
 
+/** A deposit is still "pending" (not a final approve/reject). We hold the WhatsApp
+ * until the Transaction Update webhook delivers the final status, so a player gets
+ * ONE clean message instead of "received" + "approved". Empty status = still pending. */
+function isPendingDepositStatus(status: string): boolean {
+  const s = (status || '').trim().toLowerCase();
+  if (!s) return true;
+  return /pending|process|initiat|await|hold|request|create|new/.test(s);
+}
+
 /** Insert one message_log row, ignoring duplicates on event_key. Returns whether
- * a new row was actually created (false = duplicate webhook, already logged). */
-async function insertMessageRow(url: string, row: Record<string, unknown>): Promise<boolean> {
+ * a new row was created (false = duplicate webhook) and the new row's id. */
+async function insertMessageRow(url: string, row: Record<string, unknown>): Promise<{ inserted: boolean; id: number | null }> {
   const response = await fetch(`${url}/rest/v1/message_log?on_conflict=event_key`, {
     method: 'POST',
     headers: supabaseHeaders({
@@ -55,8 +65,62 @@ async function insertMessageRow(url: string, row: Record<string, unknown>): Prom
   if (!response.ok) {
     throw new Error(`Automation queue insert failed ${response.status}: ${(await response.text()).slice(0, 200)}`);
   }
-  const rows = await response.json() as unknown[];
-  return rows.length > 0;
+  const rows = await response.json() as Array<{ id?: number }>;
+  return { inserted: rows.length > 0, id: rows[0]?.id ?? null };
+}
+
+/** Send ONE message immediately (from the webhook), so a player gets their
+ * WhatsApp within a second instead of waiting up to a cron cycle. It first
+ * atomically claims the row (queued -> processing) so the cron can't also grab
+ * it — whoever flips the status wins, preventing a double send. Any failure just
+ * leaves the row for the cron to retry with backoff. */
+async function deliverNow(url: string, id: number, message: AutomationMessage): Promise<void> {
+  const claim = await fetch(`${url}/rest/v1/message_log?id=eq.${id}&status=eq.queued`, {
+    method: 'PATCH',
+    headers: supabaseHeaders({ 'Content-Type': 'application/json', Prefer: 'return=representation' }),
+    body: JSON.stringify({
+      status: 'processing',
+      attempt_count: 1,
+      locked_until: new Date(Date.now() + 120_000).toISOString(),
+      updated_at: new Date().toISOString(),
+    }),
+  });
+  if (!claim.ok) return;
+  const claimed = await claim.json() as unknown[];
+  if (claimed.length === 0) return; // the cron already took this one
+
+  let result: Awaited<ReturnType<typeof sendWhatsAppTemplate>>;
+  try {
+    result = await sendWhatsAppTemplate({
+      phoneNumber: message.mobile,
+      countryCode: message.countryCode || '+91',
+      templateName: message.templateName,
+      languageCode: 'en',
+      bodyValues: message.bodyValues,
+    });
+  } catch (err) {
+    result = { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+
+  if (result.ok) {
+    await updateMessage(id, {
+      status: 'sent',
+      detail: `Delivered instantly for status: ${message.transactionStatus || 'unknown'}`,
+      provider_message_id: result.id ?? null,
+      sent_at: new Date().toISOString(),
+      locked_until: null,
+      last_error: null,
+    });
+  } else {
+    // Hand it back to the cron for retry with backoff.
+    await updateMessage(id, {
+      status: 'failed',
+      detail: 'Instant send failed — cron will retry',
+      last_error: result.error ?? 'send failed',
+      next_attempt_at: new Date(Date.now() + 60_000).toISOString(),
+      locked_until: null,
+    });
+  }
 }
 
 /** Persist an automation event before acknowledging the payment webhook. A
@@ -88,7 +152,13 @@ export async function queueTransactionAutomation(
   }
 
   const enabled = await isAutomationEnabled(type);
-  const inserted = await insertMessageRow(url, {
+  // Only hold pending deposits when the operator has opted in (and the update
+  // webhook is live). OFF by default so deposits always send.
+  const holdForFinal = type === 'deposit'
+    && (await isDepositFinalOnly())
+    && isPendingDepositStatus(message.transactionStatus);
+  const willSend = enabled && !holdForFinal;
+  const { inserted, id } = await insertMessageRow(url, {
     event_key: message.eventKey,
     channel: 'whatsapp',
     template: message.templateName,
@@ -101,10 +171,24 @@ export async function queueTransactionAutomation(
       countryCode: message.countryCode,
       bodyValues: message.bodyValues,
     },
-    status: enabled ? 'queued' : 'skipped',
-    detail: enabled ? 'Waiting for delivery' : 'Preview only: automation is disabled',
+    status: willSend ? 'queued' : 'skipped',
+    detail: willSend
+      ? 'Waiting for delivery'
+      : holdForFinal
+        ? 'Held: deposit still pending — will message on final status'
+        : 'Preview only: automation is disabled',
   });
-  return { accepted: inserted, duplicate: !inserted, skipped: !enabled };
+
+  // Instant delivery: send right now instead of waiting for the next cron cycle.
+  // Fire-and-forget so the webhook still returns immediately; the cron is the
+  // safety net (a stuck 'processing' row is reclaimed after its lock expires).
+  if (willSend && inserted && id != null) {
+    void deliverNow(url, id, message).catch((err) => {
+      console.error('[automation] instant send failed:', err);
+    });
+  }
+
+  return { accepted: inserted, duplicate: !inserted, skipped: !willSend };
 }
 
 async function claimMessages(limit: number, maxAttempts: number): Promise<QueueRow[]> {
