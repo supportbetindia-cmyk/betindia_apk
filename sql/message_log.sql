@@ -60,9 +60,7 @@ create index if not exists message_log_queue_idx
 
 alter table public.message_log enable row level security;
 
--- Atomically claim due messages. SKIP LOCKED prevents two cron requests from
--- processing the same row at the same time. Expired processing leases are
--- recoverable after a worker stops unexpectedly.
+
 create or replace function public.claim_whatsapp_messages(
   p_limit integer default 10,
   p_max_attempts integer default 5,

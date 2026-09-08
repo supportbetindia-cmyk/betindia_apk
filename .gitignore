@@ -2,9 +2,15 @@ node_modules
 .next
 out
 .env
+.env*
 .env*.local
 .env.local
+.env.new
 *.tsbuildinfo
 next-env.d.ts
 dev-*.log
+
+# Personal data — never commit
+backups/
+*.csv
 
