@@ -9,9 +9,10 @@ export type AutomationSettings = {
 };
 
 export type AllToggles = AutomationSettings & {
-  winback: boolean;         // daily win-back push
-  statement: boolean;       // statement reconciliation sync
+  winback: boolean;          // daily win-back push
+  statement: boolean;        // statement reconciliation sync
   depositFinalOnly: boolean; // hold deposit WhatsApp until a final (approved/rejected) status
+  campaigns: boolean;        // daily re-engagement campaigns (win-back + first-deposit WhatsApp)
 };
 
 // Every switch the dashboard is allowed to flip. The toggle endpoint validates
@@ -23,6 +24,7 @@ export const TOGGLE_KEYS = [
   'winback_enabled',
   'statement_enabled',
   'deposit_final_only',
+  'campaigns_enabled',
 ] as const;
 export type ToggleKey = (typeof TOGGLE_KEYS)[number];
 
@@ -81,6 +83,7 @@ export async function getAllToggles(): Promise<AllToggles> {
     winback: boolOf(s, 'winback_enabled', true),
     statement: boolOf(s, 'statement_enabled', true),
     depositFinalOnly: boolOf(s, 'deposit_final_only', false),
+    campaigns: boolOf(s, 'campaigns_enabled', false),
   };
 }
 
@@ -105,6 +108,11 @@ export async function isStatementEnabled(): Promise<boolean> {
  * Transaction Update webhook is live, to hold the message until final status. */
 export async function isDepositFinalOnly(): Promise<boolean> {
   return boolOf(await loadSettings(), 'deposit_final_only', false);
+}
+
+/** OFF by default: the daily re-engagement campaign cron only sends when this is on. */
+export async function isCampaignsEnabled(): Promise<boolean> {
+  return boolOf(await loadSettings(), 'campaigns_enabled', false);
 }
 
 async function upsertSetting(key: string, value: string): Promise<void> {

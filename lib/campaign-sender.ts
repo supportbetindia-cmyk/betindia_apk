@@ -4,15 +4,21 @@
 
 import {
   buildReengagementSegment,
+  fetchUsersFromTable,
   DEFAULT_CAMPAIGN_CONFIG,
   type UserInput,
   type Candidate,
   type ReengagementSegment,
 } from './reengagement';
+import { isCampaignsEnabled } from './settings';
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const INTERAKT_KEY = process.env.INTERAKT_CAMPAIGN_API_KEY;
+
+// Daily per-audience caps (override via env). Keeps volume sane for deliverability.
+const WINBACK_DAILY = Number(process.env.CAMPAIGN_WINBACK_DAILY) || 200;
+const FIRST_DEPOSIT_DAILY = Number(process.env.CAMPAIGN_FIRSTDEP_DAILY) || 500;
 
 export type Audience = 'winback' | 'first_deposit';
 
@@ -169,4 +175,59 @@ export async function sendCampaign(users: UserInput[], audience: Audience, limit
   }
 
   return { audience, eligible: pool.length, attempted: batch.length, sent, failed, skipped };
+}
+
+export type DailyCampaignResult = {
+  ran: boolean;
+  reason?: string;
+  winback?: SendResult;
+  firstDeposit?: SendResult;
+};
+
+/** Daily cron entry point. Gated by the campaigns toggle; reads the user list from
+ * the DB (so it needs no file/browser); sends a capped batch of BOTH audiences.
+ * Cooldown + dedupe are handled inside sendCampaign, so daily re-runs are safe. */
+export async function runDailyCampaigns(): Promise<DailyCampaignResult> {
+  if (!(await isCampaignsEnabled())) return { ran: false, reason: 'campaigns disabled' };
+  if (!campaignConfigured()) return { ran: false, reason: 'INTERAKT_CAMPAIGN_API_KEY not set' };
+
+  const users = await fetchUsersFromTable();
+  if (users.length === 0) return { ran: false, reason: 'no users in the users table' };
+
+  const winback = await sendCampaign(users, 'winback', WINBACK_DAILY);
+  const firstDeposit = await sendCampaign(users, 'first_deposit', FIRST_DEPOSIT_DAILY);
+  return { ran: true, winback, firstDeposit };
+}
+
+/** Persist an uploaded user list into the `users` table (idempotent upsert). */
+export async function importUsers(users: UserInput[]): Promise<number> {
+  if (!SUPABASE_URL || !SERVICE_ROLE) throw new Error('Supabase not configured');
+  let count = 0;
+  for (let i = 0; i < users.length; i += 500) {
+    const batch = users.slice(i, i + 500).map((u) => ({
+      user_id: u.user_id,
+      branch_id: u.branch_id ?? null,
+      mobile: u.mobile ?? null,
+      name: u.name ?? null,
+      language: u.language ?? null,
+      register_date: u.register_date ?? null,
+      updated_at: new Date().toISOString(),
+    }));
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/users?on_conflict=user_id`, {
+      method: 'POST',
+      headers: sbHeaders({ 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' }),
+      body: JSON.stringify(batch),
+    });
+    if (!res.ok) throw new Error(`users upsert ${res.status}: ${(await res.text()).slice(0, 150)}`);
+    count += batch.length;
+  }
+  return count;
+}
+
+/** Send BOTH audiences (win-back + first-deposit) in capped batches. */
+export async function sendBoth(users: UserInput[]): Promise<DailyCampaignResult> {
+  if (!campaignConfigured()) return { ran: false, reason: 'INTERAKT_CAMPAIGN_API_KEY not set' };
+  const winback = await sendCampaign(users, 'winback', WINBACK_DAILY);
+  const firstDeposit = await sendCampaign(users, 'first_deposit', FIRST_DEPOSIT_DAILY);
+  return { ran: true, winback, firstDeposit };
 }

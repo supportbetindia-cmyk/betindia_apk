@@ -44,6 +44,7 @@ export default function CampaignsPage() {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<SendResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [autoMsg, setAutoMsg] = useState<string | null>(null);
   const [logRows, setLogRows] = useState<CampaignLogRow[]>([]);
   const [logFilter, setLogFilter] = useState<'sent' | 'failed' | 'all'>('sent');
   const [search, setSearch] = useState('');
@@ -136,6 +137,31 @@ export default function CampaignsPage() {
     } finally { setBusy(false); }
   }, [preview, audience, limit, users, runPreview, loadLog, logFilter, search, loadSummary]);
 
+  // Upload → auto-send BOTH audiences in one click (imports to DB, then sends in bg).
+  const runImportAndSend = useCallback(async () => {
+    if (users.length === 0) return;
+    const wb = preview?.counts.winbackTargets;
+    const fd = preview?.counts.firstDepositTargets;
+    const detail = (wb != null && fd != null)
+      ? `~${wb} win-back + ~${fd} inactive (capped per run)`
+      : 'both audiences (capped per run)';
+    if (!window.confirm(`Import ${users.length.toLocaleString()} users and AUTO-SEND to ${detail}?\n\nThis sends live WhatsApp in the background.`)) return;
+
+    setBusy(true); setError(null); setResult(null); setAutoMsg(null);
+    try {
+      const res = await fetch('/api/reengagement/import-and-send', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ users }),
+      });
+      const body = await res.json() as { ok: boolean; imported?: number; error?: string };
+      if (!res.ok || !body.ok) throw new Error(body.error || 'Failed to start');
+      setAutoMsg(`Imported ${body.imported ?? users.length} users. Sending win-back + inactive in the background — watch "Sent Notifications" below.`);
+      setTimeout(() => { loadLog(logFilter, search); loadSummary(); }, 4000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally { setBusy(false); }
+  }, [users, preview, loadLog, logFilter, search, loadSummary]);
+
   const c = preview?.counts;
 
   return (
@@ -157,13 +183,17 @@ export default function CampaignsPage() {
         {/* STEP 1 — upload */}
         <div className="panel">
           <div className="panel-head"><h3>1. Upload user list (CSV)</h3><span className="panel-tag">from Excel → Save As CSV</span></div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '6px 2px', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '6px 2px', flexWrap: 'wrap' }}>
             <input type="file" accept=".csv,text/csv" onChange={(e) => onFile(e.target.files?.[0])} />
             {fileName ? <span className="kpi-vs">{fileName} — <b>{users.length.toLocaleString()}</b> users loaded</span> : <span className="kpi-vs">No file chosen</span>}
             <button className="txn-filter active" disabled={busy || users.length === 0} onClick={runPreview} style={{ marginLeft: 'auto' }}>
               {busy ? 'Working…' : 'Preview audiences'}
             </button>
+            <button className="logout-btn2" style={{ background: 'var(--green, #16a34a)', color: '#fff' }} disabled={busy || users.length === 0} onClick={runImportAndSend}>
+              {busy ? 'Working…' : 'Import & Auto-Send both →'}
+            </button>
           </div>
+          {autoMsg ? <div className="footer-note" style={{ color: 'var(--green, #16a34a)' }}>{autoMsg}</div> : null}
         </div>
 
         {/* STEP 2 — audience breakdown */}

@@ -21,5 +21,5 @@ export async function middleware(req: NextRequest) {
 // (which are token-protected and called by the platform's server, not a
 // logged-in browser), and static assets.
 export const config = {
-  matcher: ['/((?!login|api/login|api/wati|api/cron|bettracker.inject.js|_next/static|_next/image|favicon.ico).*)'],
+  matcher: ['/((?!login|api/login|api/wati|api/cron|api/track|utm.js|bettracker.inject.js|_next/static|_next/image|favicon.ico).*)'],
 };

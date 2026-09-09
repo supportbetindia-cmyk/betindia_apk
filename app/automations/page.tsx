@@ -12,6 +12,7 @@ type Toggles = {
   withdrawal: boolean;
   winback: boolean;
   statement: boolean;
+  campaigns: boolean;
 };
 type Health = {
   queued: number;
@@ -124,7 +125,7 @@ export default function AutomationsPage() {
 
   const enabled = data?.enabled;
   const interakt = data?.interaktConfigured;
-  const tog: Toggles = data?.toggles ?? { enabled: Boolean(enabled), deposit: true, withdrawal: true, winback: true, statement: true };
+  const tog: Toggles = data?.toggles ?? { enabled: Boolean(enabled), deposit: true, withdrawal: true, winback: true, statement: true, campaigns: false };
   const health = data?.health;
   const busy = toggleMutation.isPending;
   const queryError = automationQuery.error instanceof Error
@@ -281,6 +282,24 @@ export default function AutomationsPage() {
                 disabled={busy}
                 label="Statement sync switch"
                 onChange={(value) => toggleMutation.mutate({ key: 'statement_enabled', value })}
+              />
+            </div>
+            <div style={{ height: 1, background: 'rgba(13,18,41,.1)' }} />
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+              <div>
+                <div style={{ fontWeight: 600 }}>Re-engagement campaigns (daily)</div>
+                <div className="kpi-vs" style={{ color: tog.campaigns ? 'var(--green)' : '#e5484d' }}>
+                  {tog.campaigns ? 'ON — daily win-back & first-deposit WhatsApp will auto-send' : 'OFF — no campaigns auto-send'}
+                </div>
+              </div>
+              <ToggleSwitch
+                on={tog.campaigns}
+                disabled={busy}
+                label="Re-engagement campaigns switch"
+                onChange={(value) => {
+                  if (value && !window.confirm('Turn ON daily auto-campaigns?\n\nEach day this will send win-back + first-deposit WhatsApp to eligible users (capped). Make sure the campaign template + key are set.')) return;
+                  toggleMutation.mutate({ key: 'campaigns_enabled', value });
+                }}
               />
             </div>
           </div>
