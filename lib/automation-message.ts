@@ -42,15 +42,17 @@ export function normalizePhone(raw: string): { countryCode: string; phoneNumber:
 
 function statusLine(type: TransactionAutomationType, status: string): string {
   const normalized = status.toLowerCase();
-  const approved = /approv|success|complet|credit/.test(normalized);
+  // Check rejected FIRST: the platform's rejected status is "reject_completed",
+  // which also contains "complet" — so approved must NOT win over rejected.
   const rejected = /reject|fail|cancel|declin/.test(normalized);
+  const approved = !rejected && /approv|success|complet|credit/.test(normalized);
   if (type === 'withdrawal') {
-    if (approved) return 'Your withdrawal has been processed successfully.';
     if (rejected) return 'Your withdrawal could not be processed. Please contact support.';
+    if (approved) return 'Your withdrawal has been processed successfully.';
     return 'Your withdrawal is being processed. We will update you shortly.';
   }
-  if (approved) return 'Your deposit has been added to your wallet. Good luck!';
   if (rejected) return 'Your deposit could not be processed. Please contact support.';
+  if (approved) return 'Your deposit has been added to your wallet. Good luck!';
   return 'Your deposit is being processed.';
 }
 

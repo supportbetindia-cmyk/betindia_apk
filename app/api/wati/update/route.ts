@@ -31,8 +31,7 @@ export async function POST(req: Request) {
   const body = await parseWebhookBody(req);
   const txnId = body.Transaction_id ?? body.transaction_id;
 
-  // Resolve the type: 1) explicit field, 2) look up how we stored it on create,
-  // 3) infer from bank fields (withdrawals carry account/IFSC, deposits don't).
+ 
   let type = typeFromBody(body);
   if (!type && txnId) {
     try { type = await findTransactionType(String(txnId)); } catch { /* fall through to inference */ }

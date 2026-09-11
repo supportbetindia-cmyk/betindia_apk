@@ -86,6 +86,7 @@ const statusClass = (status: Row['display_status']) =>
 async function fetchTransactionData(range: TransactionRangeKey): Promise<Data> {
   const response = await fetch(`/api/transactions?range=${range}`, { cache: 'no-store' });
   const body = await response.json() as Data;
+  console.log(body);
   if (!response.ok) throw new Error(body.error || 'Transaction data is temporarily unavailable');
   return body;
 }
@@ -104,6 +105,7 @@ export default function TransactionsPage() {
     placeholderData: (previousData) => previousData,
   });
   const data = transactionQuery.data;
+  console.log("transaction data", data);
 
   const logout = useCallback(async () => {
     await fetch('/api/logout', { method: 'POST' });
