@@ -6,6 +6,7 @@ import {
   BarChart3,
   BellRing,
   CreditCard,
+  LineChart,
   MessageCircleMore,
   Megaphone,
   Zap,
@@ -15,6 +16,7 @@ import {
 // Only routes that are actually wired up. Add more here as pages are built.
 const NAV = [
   { icon: BarChart3, label: 'Dashboard', href: '/' },
+  { icon: LineChart, label: 'User Analytics', href: '/analytics' },
   { icon: CreditCard, label: 'Transactions', href: '/transactions' },
   { icon: BellRing, label: 'Push Notifications', href: '/notifications' },
   { icon: MessageCircleMore, label: 'WhatsApp CRM', href: '/whatsapp' },

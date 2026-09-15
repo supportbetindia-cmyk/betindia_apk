@@ -126,6 +126,7 @@ export default function Dashboard() {
         ) : null}
 
         {/* KPI ROW */}
+        {m && m.eventsByName.length === 0 && <div className="banner2">No SDK activity events are available for this period. Login and browsing activity cannot be measured from CSV summaries or payment webhooks. <a href="/analytics">View User Analytics</a> for registrations, deposits and per-user activity.</div>}
         <div className="kpi-grid">
           <KpiCard label="Known Devices" kpi={m?.kpis.installs ?? z} icon={<Download size={20} />} color="#4f46e5" comparisonLabel="unique SDK device IDs" />
           <KpiCard label="Active Devices" kpi={m?.kpis.activeUsers ?? z} icon={<UsersRound size={20} />} color="#2563eb" comparisonLabel={m?.range.label ?? 'selected period'} />

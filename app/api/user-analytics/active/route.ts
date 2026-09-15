@@ -1,0 +1,26 @@
+import { NextResponse } from 'next/server';
+import { activeUsers } from '@/lib/user-analytics';
+
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+export const maxDuration = 60;
+
+export async function GET(req: Request) {
+  try {
+    const url = new URL(req.url);
+    const from = url.searchParams.get('from');
+    const to = url.searchParams.get('to');
+    if (!from || !to) {
+      return NextResponse.json({ error: 'from and to are required (ISO timestamps).' }, { status: 400 });
+    }
+    if (Number.isNaN(Date.parse(from)) || Number.isNaN(Date.parse(to))) {
+      return NextResponse.json({ error: 'Invalid from/to timestamp.' }, { status: 400 });
+    }
+    const { total, series } = await activeUsers(from, to);
+    return NextResponse.json({ configured: true, count: total, series, from, to });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    const needsSetup = /does not exist|42P01|PGRST205|Could not find the table|failed 404|not configured/i.test(message);
+    return NextResponse.json({ configured: !needsSetup, error: message }, { status: needsSetup ? 200 : 500 });
+  }
+}

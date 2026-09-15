@@ -102,8 +102,7 @@ export async function GET(req: Request) {
         withdrawalApprovedAmount: totalAmount(withdrawalApproved),
         withdrawalUnconfirmedAmount: totalAmount(withdrawalUnconfirmed),
       },
-      // Keep enough history for user/transaction search. The client renders a
-      // small page at a time, so this does not create a 500-row DOM table.
+    
       recent: rows.slice(0, 500),
     });
   } catch (err) {
