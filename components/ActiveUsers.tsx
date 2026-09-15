@@ -3,9 +3,6 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Users, Loader2 } from 'lucide-react';
-import { BarsChart } from '@/components/analytics-charts';
-
-type ActiveResponse = { count: number; series: { date: string; count: number }[] };
 
 type Preset = 'today' | 'week' | 'month' | '7d' | '30d' | 'custom';
 
@@ -47,11 +44,11 @@ function resolveRange(preset: Preset, customFrom: string, customTo: string): Ran
   return { from: from.toISOString(), to: to.toISOString(), label: `${customFrom} → ${customTo}` };
 }
 
-async function fetchActive(range: NonNullable<Range>): Promise<ActiveResponse> {
+async function fetchActive(range: NonNullable<Range>): Promise<number> {
   const res = await fetch(`/api/user-analytics/active?from=${encodeURIComponent(range.from)}&to=${encodeURIComponent(range.to)}`);
-  const body = (await res.json()) as ActiveResponse & { error?: string };
+  const body = (await res.json()) as { count?: number; error?: string };
   if (!res.ok) throw new Error(body.error || 'Failed to load active users');
-  return { count: body.count ?? 0, series: body.series ?? [] };
+  return body.count ?? 0;
 }
 
 export function ActiveUsers() {
@@ -97,17 +94,13 @@ export function ActiveUsers() {
         <div className="active-hero-icon"><Users size={26} /></div>
         <div>
           <div className="active-hero-num">
-            {query.isFetching ? <Loader2 size={26} className="spin" /> : (query.data?.count ?? 0).toLocaleString('en-IN')}
+            {query.isFetching ? <Loader2 size={26} className="spin" /> : (query.data ?? 0).toLocaleString('en-IN')}
           </div>
           <div className="active-hero-sub">
             {range ? `active users · ${range.label}` : 'pick a valid custom date range'}
           </div>
         </div>
       </div>
-
-      {query.data && query.data.series.length > 1 ? (
-        <BarsChart points={query.data.series} />
-      ) : null}
 
       {query.isError ? <div className="banner2">{(query.error as Error).message}</div> : null}
       <div className="panel-note">Active = made at least one deposit or withdrawal in the selected period.</div>

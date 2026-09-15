@@ -5,6 +5,22 @@ const TEMPLATES = {
   withdrawal: 'betindia_withdrawal_status_update',
 } as const;
 
+// Rejected deposits/withdrawals use dedicated templates (8 variables each) so the
+// wording is a proper "could not be approved" notice — not the status_update one.
+const REJECTED_TEMPLATES = {
+  deposit: 'deposit_rejected',
+  withdrawal: 'withdrawal_rejected',
+} as const;
+
+const IST_DATE_FMT = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' });
+const IST_TIME_FMT = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true });
+
+/** Rejected when the platform's status says reject/fail/cancel/decline. Checked
+ * BEFORE approved because "reject_completed" also contains "complet". */
+function isRejectedStatus(status: string): boolean {
+  return /reject|fail|cancel|declin/.test(status.toLowerCase());
+}
+
 export type TransactionAutomationType = keyof typeof TEMPLATES;
 
 export type AutomationMessage = {
@@ -102,15 +118,31 @@ export function buildAutomationMessage(
   const transactionId = pick(body, 'Transaction_id', 'transaction_id');
   const transactionStatus = pick(body, 'payment_status', 'Payment_status');
   const remarks = pick(body, 'remarks', 'Remarks');
-  const templateName = TEMPLATES[type];
-  const bodyValues = [
-    name,
-    userId,
-    amount,
-    transactionId,
-    transactionStatus,
-    remarks || statusLine(type, transactionStatus),
-  ];
+
+  const rejected = isRejectedStatus(transactionStatus);
+  const templateName = rejected ? REJECTED_TEMPLATES[type] : TEMPLATES[type];
+  const now = new Date();
+  const bodyValues = rejected
+    // Rejected template (8 vars): name, userId, amount, currency, txnId, date, time, reason.
+    ? [
+        name,
+        userId,
+        amount,
+        'INR',
+        transactionId,
+        IST_DATE_FMT.format(now),
+        IST_TIME_FMT.format(now).toUpperCase(),
+        remarks || 'Not specified',
+      ]
+    // Approved / pending status_update template (6 vars): unchanged.
+    : [
+        name,
+        userId,
+        amount,
+        transactionId,
+        transactionStatus,
+        remarks || statusLine(type, transactionStatus),
+      ];
 
   return {
     eventKey: automationEventKey(type, transactionId, transactionStatus, templateName, body),

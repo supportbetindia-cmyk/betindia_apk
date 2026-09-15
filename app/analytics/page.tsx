@@ -1,12 +1,11 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { Sidebar } from '@/components/Sidebar';
 import { CsvMatch } from '@/components/CsvMatch';
 import { ActiveUsers } from '@/components/ActiveUsers';
-import { TrendLines } from '@/components/analytics-charts';
 import { UserDetail } from '@/components/UserDetail';
 import { RANGE_PRESETS, resolveUiRange, type RangePreset } from '@/lib/ui-range';
 import type { CSSProperties, ReactNode } from 'react';
@@ -18,9 +17,11 @@ import {
   ChevronsUpDown,
   CircleDollarSign,
   Download,
+  Loader2,
   LogOut,
   RefreshCw,
   Search,
+  Send,
   TrendingDown,
   TrendingUp,
   UserCheck,
@@ -61,7 +62,17 @@ async function fetchBreakdown(from: string, to: string): Promise<UserRow[]> {
   return body.rows ?? [];
 }
 
-type StatusFilter = 'all' | UserStatus | 'depositors';
+type StatusFilter = 'all' | UserStatus | 'depositors' | 'dormant_depositors';
+
+const FILTER_OPTIONS: { key: StatusFilter; label: string }[] = [
+  { key: 'all', label: 'All' },
+  { key: 'depositors', label: 'Depositors' },
+  { key: 'dormant_depositors', label: 'Dormant depositors' },
+  { key: 'active', label: 'Active' },
+  { key: 'lapsed', label: 'Lapsed' },
+  { key: 'dormant', label: 'Dormant' },
+  { key: 'registered_only', label: 'No activity' },
+];
 type SortKey = 'name' | 'registerDate' | 'firstDepositAmount' | 'depositTotal' | 'withdrawalTotal' | 'pnl' | 'lastActivityAt';
 type SortDir = 'asc' | 'desc';
 
@@ -93,6 +104,7 @@ export default function AnalyticsPage() {
   const [sortKey, setSortKey] = useState<SortKey>('depositTotal');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
   const [selected, setSelected] = useState<UserRow | null>(null);
+  const tableRef = useRef<HTMLDivElement>(null);
   const today = new Date().toISOString().slice(0, 10);
   const [tablePreset, setTablePreset] = useState<RangePreset>('all');
   const [tableFrom, setTableFrom] = useState(today);
@@ -108,6 +120,42 @@ export default function AnalyticsPage() {
     () => resolveUiRange(tablePreset, tableFrom, tableTo),
     [tablePreset, tableFrom, tableTo]
   );
+
+  const [winbackSending, setWinbackSending] = useState(false);
+  const [winbackMsg, setWinbackMsg] = useState('');
+
+  const dormantPreview = useQuery({
+    queryKey: ['dormant-preview'],
+    enabled: statusFilter === 'dormant_depositors',
+    queryFn: async () => {
+      const res = await fetch('/api/campaigns/dormant', { cache: 'no-store' });
+      return res.json() as Promise<{ configured: boolean; eligible?: number; dormant?: number; skippedCooldown?: number; error?: string }>;
+    },
+  });
+
+  const sendWinback = useCallback(async () => {
+    const eligible = dormantPreview.data?.eligible ?? 0;
+    if (!eligible) return;
+    if (!window.confirm(
+      `Send a WhatsApp win-back message to ${eligible} eligible dormant depositors now?\n\n` +
+      `• Capped at 200 per run\n• Users messaged in the last 14 days are skipped\n• This sends real marketing messages.`
+    )) return;
+    setWinbackSending(true);
+    setWinbackMsg('');
+    try {
+      const res = await fetch('/api/campaigns/dormant', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ limit: 200 }),
+      });
+      const b = await res.json();
+      if (!res.ok) throw new Error(b.error || 'Send failed');
+      setWinbackMsg(`Sent ${b.sent} · failed ${b.failed} · skipped ${b.skipped}.`);
+      void dormantPreview.refetch();
+    } catch (e) {
+      setWinbackMsg(e instanceof Error ? e.message : String(e));
+    } finally {
+      setWinbackSending(false);
+    }
+  }, [dormantPreview]);
 
   const scoped = tablePreset !== 'all';
   const breakdownQuery = useQuery({
@@ -131,7 +179,8 @@ export default function AnalyticsPage() {
     const q = search.trim().toLowerCase();
     return tableSource.filter((r) => {
       if (statusFilter === 'depositors' && !r.depositor) return false;
-      if (statusFilter !== 'all' && statusFilter !== 'depositors' && r.status !== statusFilter) return false;
+      if (statusFilter === 'dormant_depositors' && !(r.depositor && r.status === 'dormant')) return false;
+      if (statusFilter !== 'all' && statusFilter !== 'depositors' && statusFilter !== 'dormant_depositors' && r.status !== statusFilter) return false;
       if (!q) return true;
       return (
         (r.name ?? '').toLowerCase().includes(q) ||
@@ -158,6 +207,16 @@ export default function AnalyticsPage() {
       setSortDir(DATE_KEYS.includes(key) || NUM_KEYS.includes(key) ? 'desc' : 'asc');
       return key;
     });
+  }, []);
+
+  const showDormantDepositors = useCallback(() => {
+    setTablePreset('all');            // lifetime view
+    setStatusFilter('dormant_depositors');
+    setSortKey('depositTotal');
+    setSortDir('desc');
+    setVisibleCount(100);
+    setSearch('');
+    setTimeout(() => tableRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
   }, []);
 
   const downloadCsv = useCallback(() => {
@@ -235,7 +294,8 @@ export default function AnalyticsPage() {
               <MiniCard label="Active (30d)" value={(t?.activeUsers30d ?? 0).toLocaleString('en-IN')}
                 sub="transacted in last 30 days" color="#2563eb" icon={<UsersRound size={20} />} />
               <MiniCard label="Dormant Depositors" value={(t?.dormantDepositors ?? 0).toLocaleString('en-IN')}
-                sub="deposited before · silent 30d+" color="#dc2626" icon={<TrendingDown size={20} />} />
+                sub="deposited before · silent 30d+ · click to view" color="#dc2626" icon={<TrendingDown size={20} />}
+                onClick={showDormantDepositors} />
               <MiniCard label="Net P/L (house)" value={money(t?.netPnl ?? 0)}
                 sub={`${money(t?.depositTotal ?? 0)} in − ${money(t?.withdrawalTotal ?? 0)} out`}
                 color="#0f766e" icon={<CircleDollarSign size={20} />} />
@@ -243,21 +303,8 @@ export default function AnalyticsPage() {
 
             <ActiveUsers />
 
-            {/* REGISTRATIONS vs FIRST DEPOSITS TREND */}
-            <div className="panel">
-              <div className="panel-head">
-                <h3>Registrations &amp; First Deposits</h3>
-                <div className="chart-legend">
-                  <span className="legend-item"><i style={{ background: '#4f46e5' }} /> Registrations</span>
-                  <span className="legend-item"><i style={{ background: '#059669' }} /> First deposits</span>
-                  <span className="panel-tag">last 30 days (IST)</span>
-                </div>
-              </div>
-              {data?.trend?.length ? <TrendLines points={data.trend} /> : <div className="empty2">{query.isLoading ? 'Loading…' : 'No trend data.'}</div>}
-            </div>
-
             {/* PER-USER TABLE */}
-            <div className="panel">
+            <div className="panel" ref={tableRef}>
               <div className="panel-head">
                 <h3>Per-User Breakdown</h3>
                 <div className="txn-toolbar">
@@ -271,13 +318,13 @@ export default function AnalyticsPage() {
                     />
                   </label>
                   <div className="txn-filters">
-                    {(['all', 'depositors', 'active', 'lapsed', 'dormant', 'registered_only'] as const).map((f) => (
+                    {FILTER_OPTIONS.map((f) => (
                       <button
-                        key={f}
-                        className={`txn-filter${statusFilter === f ? ' active' : ''}`}
-                        onClick={() => { setStatusFilter(f); setVisibleCount(100); }}
+                        key={f.key}
+                        className={`txn-filter${statusFilter === f.key ? ' active' : ''}`}
+                        onClick={() => { setStatusFilter(f.key); setVisibleCount(100); }}
                       >
-                        {f === 'all' ? 'all' : f === 'depositors' ? 'depositors' : STATUS_LABEL[f]}
+                        {f.label}
                       </button>
                     ))}
                   </div>
@@ -314,6 +361,33 @@ export default function AnalyticsPage() {
                 </span>
               </div>
 
+              {statusFilter === 'dormant_depositors' ? (
+                <div className="banner2 banner-ok" style={{ margin: '12px 0 0' }}>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12, justifyContent: 'space-between' }}>
+                    <span>
+                      <b>{filtered.length.toLocaleString('en-IN')} dormant depositors</b> — deposited before but silent 30d+.
+                      {dormantPreview.data?.configured === false
+                        ? ' Campaign key not set — set INTERAKT_CAMPAIGN_API_KEY to send.'
+                        : dormantPreview.data
+                          ? ` ${dormantPreview.data.eligible ?? 0} eligible to message now (rest are within the 14-day cooldown).`
+                          : dormantPreview.isFetching ? ' Checking eligibility…' : ''}
+                    </span>
+                    <button
+                      className="btn-primary"
+                      disabled={winbackSending || !dormantPreview.data?.eligible}
+                      onClick={sendWinback}
+                    >
+                      {winbackSending ? <Loader2 size={15} className="spin" /> : <Send size={15} />}
+                      {winbackSending ? 'Sending…' : `Send win-back to ${dormantPreview.data?.eligible ?? 0}`}
+                    </button>
+                  </div>
+                  {winbackMsg ? <div style={{ marginTop: 8, fontWeight: 600 }}>{winbackMsg}</div> : null}
+                  <div style={{ marginTop: 6, fontSize: 11.5, opacity: 0.85 }}>
+                    Or <b>Download CSV</b> above to use in <a href="/campaigns">Campaigns</a>. Automatic daily sends run via the win-back cron when Campaigns is enabled.
+                  </div>
+                </div>
+              ) : null}
+
               {rows.length ? (
                 <div className="ua-table">
                   <div className="ua-head">
@@ -336,8 +410,8 @@ export default function AnalyticsPage() {
                       <span className="txn-mono" title={r.firstDepositAt ?? ''}>
                         {r.firstDepositAmount != null ? `${money(r.firstDepositAmount)} · ${dateShort(r.firstDepositAt)}` : '—'}
                       </span>
-                      <span className="txn-amt">{r.depositCount ? `${money(r.depositTotal)}` : '—'}<small className="ua-count">{r.depositCount ? ` ×${r.depositCount}` : ''}</small></span>
-                      <span className="txn-amt">{r.withdrawalCount ? `${money(r.withdrawalTotal)}` : '—'}<small className="ua-count">{r.withdrawalCount ? ` ×${r.withdrawalCount}` : ''}</small></span>
+                      <span className="txn-amt">{r.depositCount ? money(r.depositTotal) : '—'}</span>
+                      <span className="txn-amt">{r.withdrawalCount ? money(r.withdrawalTotal) : '—'}</span>
                       <span className={`txn-amt ${r.pnl >= 0 ? 'ua-pos' : 'ua-neg'}`}>{money(r.pnl)}</span>
                       <span className="txn-mono">{dateShort(r.lastActivityAt)}</span>
                       <span className={`notif-status ${STATUS_CLASS[r.status]}`}>{STATUS_LABEL[r.status]}</span>
@@ -396,11 +470,16 @@ function SortTh({ label, k, sortKey, sortDir, onSort }: {
   );
 }
 
-function MiniCard({ label, value, sub, color, icon }: {
-  label: string; value: string; sub: string; color: string; icon: ReactNode;
+function MiniCard({ label, value, sub, color, icon, onClick }: {
+  label: string; value: string; sub: string; color: string; icon: ReactNode; onClick?: () => void;
 }) {
   return (
-    <div className="kpi" style={{ '--accent': color } as CSSProperties}>
+    <div
+      className={`kpi${onClick ? ' kpi-click' : ''}`}
+      style={{ '--accent': color } as CSSProperties}
+      onClick={onClick}
+      role={onClick ? 'button' : undefined}
+    >
       <div className="kpi-icon">{icon}</div>
       <div className="kpi-body">
         <div className="kpi-label">{label}</div>

@@ -144,13 +144,10 @@ export type SendResult = {
   skipped: number;
 };
 
-/** Send a campaign to up to `limit` users of one audience. */
-export async function sendCampaign(users: UserInput[], audience: Audience, limit: number): Promise<SendResult> {
-  if (!INTERAKT_KEY) throw new Error('INTERAKT_CAMPAIGN_API_KEY is not set on the server');
-  const seg = await buildReengagementSegment(users, DEFAULT_CAMPAIGN_CONFIG);
-  const pool = audience === 'first_deposit' ? seg.firstDeposit : seg.winback;
+/** Send WhatsApp templates to a ready pool of candidates (capped at `limit`). */
+async function sendCandidates(pool: Candidate[], limit: number): Promise<SendResult> {
   const batch = pool.slice(0, limit);
-
+  const audience: Audience = pool[0]?.audience ?? 'winback';
   const today = new Date().toISOString().slice(0, 10);
   let sent = 0, failed = 0, skipped = 0;
 
@@ -177,6 +174,118 @@ export async function sendCampaign(users: UserInput[], audience: Audience, limit
   return { audience, eligible: pool.length, attempted: batch.length, sent, failed, skipped };
 }
 
+/** Send a campaign to up to `limit` users of one audience. */
+export async function sendCampaign(users: UserInput[], audience: Audience, limit: number): Promise<SendResult> {
+  if (!INTERAKT_KEY) throw new Error('INTERAKT_CAMPAIGN_API_KEY is not set on the server');
+  const seg = await buildReengagementSegment(users, DEFAULT_CAMPAIGN_CONFIG);
+  const pool = audience === 'first_deposit' ? seg.firstDeposit : seg.winback;
+  return sendCandidates(pool, limit);
+}
+
+// ---------------------------------------------------------------------------
+// Dormant DEPOSITOR win-back — uses the CRM report (users table) as the source
+// of truth for "who has ever deposited", combined with transaction recency, so
+// it catches depositors the webhook never saw.
+// ---------------------------------------------------------------------------
+
+const DAY = 86_400_000;
+
+export type DormantConfig = { inactiveDays: number; maxInactiveDays: number; cooldownDays: number };
+export const DEFAULT_DORMANT_CONFIG: DormantConfig = {
+  inactiveDays: Number(process.env.DORMANT_INACTIVE_DAYS) || 30,
+  maxInactiveDays: Number(process.env.DORMANT_MAX_INACTIVE_DAYS) || 0, // 0 = no upper limit
+  cooldownDays: Number(process.env.DORMANT_COOLDOWN_DAYS) || 14,
+};
+
+function daysSince(iso: string | null | undefined, now: number): number | null {
+  if (!iso) return null;
+  const t = new Date(iso).getTime();
+  return Number.isNaN(t) ? null : Math.floor((now - t) / DAY);
+}
+
+async function fetchAll<T>(pathAndQuery: string): Promise<T[]> {
+  if (!SUPABASE_URL || !SERVICE_ROLE) throw new Error('Supabase not configured');
+  const pageSize = 1000;
+  const all: T[] = [];
+  for (let off = 0; ; off += pageSize) {
+    const sep = pathAndQuery.includes('?') ? '&' : '?';
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/${pathAndQuery}${sep}limit=${pageSize}&offset=${off}`, { headers: sbHeaders(), cache: 'no-store' });
+    if (!res.ok) throw new Error(`read ${res.status}: ${(await res.text()).slice(0, 150)}`);
+    const page = await res.json() as T[];
+    all.push(...page);
+    if (page.length < pageSize) break;
+  }
+  return all;
+}
+
+async function fetchWinbackCooldown(cooldownDays: number): Promise<Set<string>> {
+  const since = new Date(Date.now() - cooldownDays * DAY).toISOString();
+  const rows = await fetchAll<{ user_id: string | null }>(
+    `message_log?select=user_id&event_type=in.(winback,first_deposit)&status=eq.sent&created_at=gte.${since}`,
+  );
+  return new Set(rows.map((r) => r.user_id).filter((id): id is string => Boolean(id)));
+}
+
+async function fetchTxnRecency(): Promise<Map<string, { last: string; deposits: number }>> {
+  const rows = await fetchAll<{ user_id: string | null; type: string | null; created_at: string }>('transactions?select=user_id,type,created_at');
+  const m = new Map<string, { last: string; deposits: number }>();
+  for (const r of rows) {
+    if (!r.user_id) continue;
+    const cur = m.get(r.user_id);
+    if (!cur) m.set(r.user_id, { last: r.created_at, deposits: r.type === 'deposit' ? 1 : 0 });
+    else { if (new Date(r.created_at) > new Date(cur.last)) cur.last = r.created_at; if (r.type === 'deposit') cur.deposits++; }
+  }
+  return m;
+}
+
+type DormantUserRow = {
+  user_id: string; mobile: string | null; name: string | null; language: string | null;
+  deposit_count: number | null; last_deposit_date: string | null; last_withdrawal_date: string | null;
+};
+
+export type DormantCounts = { depositors: number; dormant: number; skippedNoMobile: number; skippedCooldown: number; eligible: number };
+
+/** Depositors (report OR webhook) silent >= inactiveDays and outside the cooldown. */
+export async function fetchDormantDepositors(config: DormantConfig = DEFAULT_DORMANT_CONFIG, now = Date.now()): Promise<{ candidates: Candidate[]; counts: DormantCounts }> {
+  const [users, txn, cooldown] = await Promise.all([
+    fetchAll<DormantUserRow>('users?select=user_id,mobile,name,language,deposit_count,last_deposit_date,last_withdrawal_date'),
+    fetchTxnRecency(),
+    fetchWinbackCooldown(config.cooldownDays),
+  ]);
+
+  const candidates: Candidate[] = [];
+  const counts: DormantCounts = { depositors: 0, dormant: 0, skippedNoMobile: 0, skippedCooldown: 0, eligible: 0 };
+
+  for (const u of users) {
+    const agg = txn.get(u.user_id);
+    const depositor = (u.deposit_count ?? 0) > 0 || (agg?.deposits ?? 0) > 0;
+    if (!depositor) continue;
+    counts.depositors++;
+
+    const lastActivity = [u.last_deposit_date, u.last_withdrawal_date, agg?.last]
+      .filter((d): d is string => Boolean(d)).sort().at(-1) ?? null;
+    const days = daysSince(lastActivity, now);
+    if (days === null || days < config.inactiveDays) continue;
+    if (config.maxInactiveDays > 0 && days > config.maxInactiveDays) continue;
+    counts.dormant++;
+
+    if (!u.mobile) { counts.skippedNoMobile++; continue; }
+    if (cooldown.has(u.user_id)) { counts.skippedCooldown++; continue; }
+
+    candidates.push({ user_id: u.user_id, mobile: u.mobile, name: u.name, language: u.language, audience: 'winback', inactiveDays: days, bonus: 0 });
+  }
+  counts.eligible = candidates.length;
+  return { candidates, counts };
+}
+
+/** Send the win-back template to dormant depositors (capped at `limit`). */
+export async function sendDormantWinback(limit = WINBACK_DAILY, config: DormantConfig = DEFAULT_DORMANT_CONFIG): Promise<SendResult & { counts: DormantCounts }> {
+  if (!INTERAKT_KEY) throw new Error('INTERAKT_CAMPAIGN_API_KEY is not set on the server');
+  const { candidates, counts } = await fetchDormantDepositors(config);
+  const result = await sendCandidates(candidates, limit);
+  return { ...result, counts };
+}
+
 export type DailyCampaignResult = {
   ran: boolean;
   reason?: string;
@@ -194,7 +303,10 @@ export async function runDailyCampaigns(): Promise<DailyCampaignResult> {
   const users = await fetchUsersFromTable();
   if (users.length === 0) return { ran: false, reason: 'no users in the users table' };
 
-  const winback = await sendCampaign(users, 'winback', WINBACK_DAILY);
+  // Win-back targets dormant DEPOSITORS from the CRM report + webhook (source of
+  // truth), so it reaches everyone who ever deposited — not just webhook-era lapses.
+  const winback = await sendDormantWinback(WINBACK_DAILY);
+  // "Other users": registered but never deposited -> first-deposit nudge.
   const firstDeposit = await sendCampaign(users, 'first_deposit', FIRST_DEPOSIT_DAILY);
   return { ran: true, winback, firstDeposit };
 }

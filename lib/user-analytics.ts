@@ -92,7 +92,6 @@ export type UserAnalytics = {
     netPnl: number;
     avgFirstDeposit: number;
   };
-  trend: TrendPoint[];  // last 30 IST days: new registrations vs first-time depositors
   users: UserRow[];
 };
 
@@ -131,8 +130,6 @@ function istStartOfTodayMs(nowMs: number): number {
 function istDayString(ms: number): string {
   return new Date(ms + IST_OFFSET_MS).toISOString().slice(0, 10);
 }
-
-export type TrendPoint = { date: string; registrations: number; ftd: number };
 
 /** Pure aggregation: merge the users list with transaction rollups per user. */
 export function buildUserAnalytics(
@@ -275,30 +272,8 @@ export function buildUserAnalytics(
 
   out.sort((a, b) => b.depositTotal - a.depositTotal || b.pnl - a.pnl);
 
-  // 30-day daily trend: new registrations vs first-time depositors.
-  const trendDays: string[] = [];
-  for (let i = 29; i >= 0; i -= 1) trendDays.push(istDayString(todayStartMs - i * DAY_MS));
-  const regByDay = new Map(trendDays.map((d) => [d, 0]));
-  const ftdByDay = new Map(trendDays.map((d) => [d, 0]));
-  for (const row of out) {
-    if (row.registerDate) {
-      const d = istDayString(new Date(row.registerDate).getTime());
-      if (regByDay.has(d)) regByDay.set(d, (regByDay.get(d) as number) + 1);
-    }
-    if (row.firstDepositAt) {
-      const d = istDayString(new Date(row.firstDepositAt).getTime());
-      if (ftdByDay.has(d)) ftdByDay.set(d, (ftdByDay.get(d) as number) + 1);
-    }
-  }
-  const trend: TrendPoint[] = trendDays.map((date) => ({
-    date,
-    registrations: regByDay.get(date) ?? 0,
-    ftd: ftdByDay.get(date) ?? 0,
-  }));
-
   return {
     generatedAt: new Date(nowMs).toISOString(),
-    trend,
     totals: {
       registeredUsers,
       depositors,
