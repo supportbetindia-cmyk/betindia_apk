@@ -25,6 +25,7 @@ export function isApprovedStatus(status: string | null): boolean {
 export type AnalyticsTxn = {
   type: 'deposit' | 'withdrawal';
   user_id: string | null;
+  branch_id: string | null;
   user_name: string | null;
   mobile_number: string | null;
   amount: number | null;
@@ -35,6 +36,7 @@ export type AnalyticsTxn = {
 
 export type AnalyticsUser = {
   user_id: string;
+  branch_id?: string | null;
   name: string | null;
   mobile: string | null;
   register_date: string | null;
@@ -55,6 +57,7 @@ export type UserStatus = 'active' | 'lapsed' | 'dormant' | 'registered_only';
 
 export type UserRow = {
   userId: string;
+  branchId: string | null;   // Master / Branch ID from the platform
   name: string | null;
   mobile: string | null;
   registerDate: string | null;
@@ -91,6 +94,8 @@ export type UserAnalytics = {
     withdrawalTotal: number;
     netPnl: number;
     avgFirstDeposit: number;
+    todayDepositTotal: number;
+    todayWithdrawalTotal: number;
   };
   users: UserRow[];
 };
@@ -98,6 +103,7 @@ export type UserAnalytics = {
 function newRow(userId: string): UserRow {
   return {
     userId,
+    branchId: null,
     name: null,
     mobile: null,
     registerDate: null,
@@ -131,6 +137,11 @@ function istDayString(ms: number): string {
   return new Date(ms + IST_OFFSET_MS).toISOString().slice(0, 10);
 }
 
+/** A real platform branch/master id — not the synthetic statement-sync marker. */
+function isRealBranch(b: string | null | undefined): b is string {
+  return Boolean(b) && b !== 'statement-api' && !String(b).startsWith('statement:');
+}
+
 /** Pure aggregation: merge the users list with transaction rollups per user. */
 export function buildUserAnalytics(
   users: AnalyticsUser[],
@@ -151,6 +162,12 @@ export function buildUserAnalytics(
     return row;
   };
 
+  const todayStartMs = istStartOfTodayMs(nowMs);
+  // Today's approved deposit/withdrawal amounts — always from transactions (the
+  // report is lifetime), independent of the report double-count guard below.
+  let todayDepositTotal = 0;
+  let todayWithdrawalTotal = 0;
+
   // Seed from the uploaded users table (registration + CRM report financials).
   for (const u of users) {
     if (!u.user_id) continue;
@@ -159,6 +176,7 @@ export function buildUserAnalytics(
     row.registered = true;
     if (u.name) row.name = u.name;
     if (u.mobile) row.mobile = u.mobile;
+    if (isRealBranch(u.branch_id)) row.branchId = u.branch_id;
     if (u.register_date) row.registerDate = u.register_date;
 
     // A report user is one with lifetime deposit figures from the platform.
@@ -189,6 +207,7 @@ export function buildUserAnalytics(
     const row = ensure(id);
     if (!row.name && t.user_name) row.name = t.user_name;
     if (!row.mobile && t.mobile_number) row.mobile = t.mobile_number;
+    if (!row.branchId && isRealBranch(t.branch_id)) row.branchId = t.branch_id;
 
     const ts = t.created_at;
     if (ts && (!row.lastActivityAt || ts > row.lastActivityAt)) row.lastActivityAt = ts;
@@ -197,9 +216,16 @@ export function buildUserAnalytics(
     if (t.remarks && String(t.remarks).trim()) row.lastRemark = String(t.remarks).trim();
 
     if (!isApprovedStatus(t.payment_status)) continue;
-    // Report is the source of truth for those users — don't double-count.
-    if (reportSeeded.has(id)) continue;
     const amount = Number.isFinite(t.amount as number) ? Number(t.amount) : 0;
+
+    // Today's totals count every approved txn today, report user or not.
+    if (ts && new Date(ts).getTime() >= todayStartMs) {
+      if (t.type === 'deposit') todayDepositTotal += amount;
+      else todayWithdrawalTotal += amount;
+    }
+
+    // Report is the source of truth for lifetime figures — don't double-count.
+    if (reportSeeded.has(id)) continue;
 
     if (t.type === 'deposit') {
       row.depositCount += 1;
@@ -214,7 +240,6 @@ export function buildUserAnalytics(
     }
   }
 
-  const todayStartMs = istStartOfTodayMs(nowMs);
   let depositors = 0;
   let activeToday = 0;
   let active7 = 0;
@@ -289,6 +314,8 @@ export function buildUserAnalytics(
       withdrawalTotal,
       netPnl: depositTotal - withdrawalTotal,
       avgFirstDeposit: ftdCount ? Math.round(ftdSum / ftdCount) : 0,
+      todayDepositTotal,
+      todayWithdrawalTotal,
     },
     users: out,
   };
@@ -432,9 +459,9 @@ export async function activeUsers(fromIso: string, toIso: string): Promise<Activ
  * [fromIso, toIso). Only users with activity in the window are returned. */
 export async function fetchUserBreakdown(fromIso: string, toIso: string, nowMs = Date.now()): Promise<UserRow[]> {
   const [users, txns] = await Promise.all([
-    fetchAll<AnalyticsUser>('users?select=user_id,name,mobile,register_date'),
+    fetchAll<AnalyticsUser>('users?select=user_id,branch_id,name,mobile,register_date'),
     fetchAll<AnalyticsTxn>(
-      `transactions?select=type,user_id,user_name,mobile_number,amount,payment_status,remarks,created_at&created_at=gte.${encodeURIComponent(fromIso)}&created_at=lt.${encodeURIComponent(toIso)}&order=created_at.asc`
+      `transactions?select=type,user_id,branch_id,user_name,mobile_number,amount,payment_status,remarks,created_at&created_at=gte.${encodeURIComponent(fromIso)}&created_at=lt.${encodeURIComponent(toIso)}&order=created_at.asc`
     ),
   ]);
   const meta = new Map(users.map((u) => [String(u.user_id).trim(), u]));
@@ -447,11 +474,12 @@ export async function fetchUserBreakdown(fromIso: string, toIso: string, nowMs =
     if (!row) {
       row = newRow(id);
       const m = meta.get(id);
-      if (m) { row.registered = true; row.name = m.name; row.mobile = m.mobile; row.registerDate = m.register_date; }
+      if (m) { row.registered = true; row.name = m.name; row.mobile = m.mobile; row.registerDate = m.register_date; row.branchId = isRealBranch(m.branch_id) ? m.branch_id : null; }
       map.set(id, row);
     }
     if (!row.name && t.user_name) row.name = t.user_name;
     if (!row.mobile && t.mobile_number) row.mobile = t.mobile_number;
+    if (!row.branchId && isRealBranch(t.branch_id)) row.branchId = t.branch_id;
 
     const ts = t.created_at;
     if (ts && (!row.lastActivityAt || ts > row.lastActivityAt)) row.lastActivityAt = ts;
@@ -538,9 +566,9 @@ export async function matchUserIds(ids: string[]): Promise<MatchResult> {
 /** Fetch every user + transaction row and build the analytics. */
 export async function fetchUserAnalytics(nowMs = Date.now()): Promise<UserAnalytics> {
   const [users, txns] = await Promise.all([
-    fetchAll<AnalyticsUser>('users?select=user_id,name,mobile,register_date,first_deposit_date,first_deposit_amount,last_deposit_date,last_withdrawal_date,total_deposit,deposit_count,total_withdrawal,withdrawal_count,status_label'),
+    fetchAll<AnalyticsUser>('users?select=user_id,branch_id,name,mobile,register_date,first_deposit_date,first_deposit_amount,last_deposit_date,last_withdrawal_date,total_deposit,deposit_count,total_withdrawal,withdrawal_count,status_label'),
     fetchAll<AnalyticsTxn>(
-      'transactions?select=type,user_id,user_name,mobile_number,amount,payment_status,remarks,created_at&order=created_at.asc'
+      'transactions?select=type,user_id,branch_id,user_name,mobile_number,amount,payment_status,remarks,created_at&order=created_at.asc'
     ),
   ]);
   return buildUserAnalytics(users, txns, nowMs);

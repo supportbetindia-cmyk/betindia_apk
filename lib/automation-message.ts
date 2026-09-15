@@ -1,27 +1,42 @@
 import { createHash } from 'node:crypto';
 
+// ============================================================================
+// WhatsApp template names, by transaction TYPE and OUTCOME.
+// >>> TO CHANGE A TEMPLATE NAME, EDIT IT HERE <<< (must match the EXACT template
+//     name approved on Interakt). Nothing else needs to change.
+//
+// Variables sent to every template:
+//   {{1}} name  {{2}} userId  {{3}} amount  {{4}} currency(INR)
+//   {{5}} transactionId  {{6}} date  {{7}} time
+// The REJECTED templates take one extra variable: {{8}} reason.
+// ============================================================================
 const TEMPLATES = {
-  deposit: 'betindia_deposit_status_update',
-  withdrawal: 'betindia_withdrawal_status_update',
+  deposit: {
+    approved: 'deposit_approved',
+    pending: 'deposit_request_received_dk',
+    rejected: 'deposit_rejected',
+  },
+  withdrawal: {
+    approved: 'withdrawal_approved',
+    pending: 'withdrawal_request_received',
+    rejected: 'withdrawal_rejected',
+  },
 } as const;
 
-// Rejected deposits/withdrawals use dedicated templates (8 variables each) so the
-// wording is a proper "could not be approved" notice — not the status_update one.
-const REJECTED_TEMPLATES = {
-  deposit: 'deposit_rejected',
-  withdrawal: 'withdrawal_rejected',
-} as const;
+export type TransactionAutomationType = keyof typeof TEMPLATES;
+type Outcome = 'approved' | 'pending' | 'rejected';
 
 const IST_DATE_FMT = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' });
 const IST_TIME_FMT = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true });
 
-/** Rejected when the platform's status says reject/fail/cancel/decline. Checked
- * BEFORE approved because "reject_completed" also contains "complet". */
-function isRejectedStatus(status: string): boolean {
-  return /reject|fail|cancel|declin/.test(status.toLowerCase());
+/** Map a platform status to an outcome. Rejected is checked FIRST because
+ * "reject_completed" also contains "complet" (which the approved test matches). */
+function classifyOutcome(status: string): Outcome {
+  const s = status.toLowerCase();
+  if (/reject|fail|cancel|declin/.test(s)) return 'rejected';
+  if (/approv|success|complet|credit/.test(s)) return 'approved';
+  return 'pending';
 }
-
-export type TransactionAutomationType = keyof typeof TEMPLATES;
 
 export type AutomationMessage = {
   eventKey: string;
@@ -54,22 +69,6 @@ export function normalizePhone(raw: string): { countryCode: string; phoneNumber:
   // Indian mobile numbers are exactly 10 digits and start 6-9.
   if (!local || !/^[6-9]\d{9}$/.test(local)) return null;
   return { countryCode: '+91', phoneNumber: local };
-}
-
-function statusLine(type: TransactionAutomationType, status: string): string {
-  const normalized = status.toLowerCase();
-  // Check rejected FIRST: the platform's rejected status is "reject_completed",
-  // which also contains "complet" — so approved must NOT win over rejected.
-  const rejected = /reject|fail|cancel|declin/.test(normalized);
-  const approved = !rejected && /approv|success|complet|credit/.test(normalized);
-  if (type === 'withdrawal') {
-    if (rejected) return 'Your withdrawal could not be processed. Please contact support.';
-    if (approved) return 'Your withdrawal has been processed successfully.';
-    return 'Your withdrawal is being processed. We will update you shortly.';
-  }
-  if (rejected) return 'Your deposit could not be processed. Please contact support.';
-  if (approved) return 'Your deposit has been added to your wallet. Good luck!';
-  return 'Your deposit is being processed.';
 }
 
 function normalizedStatus(status: string): string {
@@ -119,30 +118,20 @@ export function buildAutomationMessage(
   const transactionStatus = pick(body, 'payment_status', 'Payment_status');
   const remarks = pick(body, 'remarks', 'Remarks');
 
-  const rejected = isRejectedStatus(transactionStatus);
-  const templateName = rejected ? REJECTED_TEMPLATES[type] : TEMPLATES[type];
+  const outcome = classifyOutcome(transactionStatus);
+  const templateName = TEMPLATES[type][outcome];
   const now = new Date();
-  const bodyValues = rejected
-    // Rejected template (8 vars): name, userId, amount, currency, txnId, date, time, reason.
-    ? [
-        name,
-        userId,
-        amount,
-        'INR',
-        transactionId,
-        IST_DATE_FMT.format(now),
-        IST_TIME_FMT.format(now).toUpperCase(),
-        remarks || 'Not specified',
-      ]
-    // Approved / pending status_update template (6 vars): unchanged.
-    : [
-        name,
-        userId,
-        amount,
-        transactionId,
-        transactionStatus,
-        remarks || statusLine(type, transactionStatus),
-      ];
+  // Every template shares these 7 vars; rejected adds an 8th (reason).
+  const base = [
+    name,
+    userId,
+    amount,
+    'INR',
+    transactionId,
+    IST_DATE_FMT.format(now),
+    IST_TIME_FMT.format(now).toUpperCase(),
+  ];
+  const bodyValues = outcome === 'rejected' ? [...base, remarks || 'Not specified'] : base;
 
   return {
     eventKey: automationEventKey(type, transactionId, transactionStatus, templateName, body),
@@ -178,7 +167,7 @@ export function describeSkippedMessage(
   const userId = pick(body, 'user_id', 'User_id');
   const transactionId = pick(body, 'Transaction_id', 'transaction_id');
   const transactionStatus = pick(body, 'payment_status', 'Payment_status');
-  const templateName = TEMPLATES[type];
+  const templateName = TEMPLATES[type][classifyOutcome(transactionStatus)];
   return {
     type,
     templateName,

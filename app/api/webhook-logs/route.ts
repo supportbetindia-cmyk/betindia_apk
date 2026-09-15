@@ -7,6 +7,7 @@ export const revalidate = 0;
 export async function GET() {
   try {
     const logs = await fetchWebhookLogs(50);
+    console.log(logs)
     return NextResponse.json({ configured: true, logs });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

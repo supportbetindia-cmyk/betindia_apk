@@ -1,3 +1,32 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* shadcn/ui theme tokens — prefixed --sc- so they never clash with the app's own
+   CSS variables below. Used only by the shadcn components on the analytics page. */
+:root {
+  --sc-background: 0 0% 100%;
+  --sc-foreground: 222 30% 12%;
+  --sc-card: 0 0% 100%;
+  --sc-card-foreground: 222 30% 12%;
+  --sc-popover: 0 0% 100%;
+  --sc-popover-foreground: 222 30% 12%;
+  --sc-primary: 142 71% 35%;
+  --sc-primary-foreground: 0 0% 100%;
+  --sc-secondary: 210 40% 96%;
+  --sc-secondary-foreground: 222 30% 20%;
+  --sc-muted: 210 40% 96%;
+  --sc-muted-foreground: 215 16% 47%;
+  --sc-accent: 210 40% 96%;
+  --sc-accent-foreground: 222 30% 20%;
+  --sc-destructive: 0 72% 51%;
+  --sc-destructive-foreground: 0 0% 100%;
+  --sc-border: 214 32% 91%;
+  --sc-input: 214 32% 91%;
+  --sc-ring: 142 71% 35%;
+  --sc-radius: 0.6rem;
+}
+
 :root {
   --bg: #f6f8fc;
   --panel: #ffffff;
@@ -232,12 +261,13 @@ html, body {
 .t-withdrawal { background: #eaf1ff; color: #3b82f6; }
 @media (max-width: 900px) { .txn-head, .txn-row { grid-template-columns: 0.9fr 1fr 0.9fr 1fr; } .txn-head span:nth-child(n+5), .txn-row span:nth-child(n+5) { display: none; } }
 
-/* User Analytics table (8 columns) */
-.ua-table { display: flex; flex-direction: column; font-size: 12.5px; }
-.ua-head, .ua-row { display: grid; grid-template-columns: 1.4fr 0.8fr 1.2fr 1fr 1fr 0.9fr 0.8fr 0.8fr 1.3fr; gap: 12px; align-items: center; padding: 12px 10px; }
-.ua-head { color: #64748b; background: #f8fafc; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; border: 1px solid var(--border); border-radius: 7px; }
+/* User Analytics table (10 columns) — horizontally scrollable on narrow screens */
+.ua-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: 7px; }
+.ua-table { display: flex; flex-direction: column; font-size: 12.5px; min-width: 1320px; }
+.ua-head, .ua-row { display: grid; grid-template-columns: 0.4fr 1.5fr 0.7fr 0.85fr 1.25fr 1fr 1fr 0.9fr 0.9fr 0.9fr 0.8fr 1.3fr; gap: 12px; align-items: center; padding: 12px 10px; }
+.ua-head { color: #64748b; background: #f8fafc; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; border: 1px solid var(--border); border-radius: 7px; position: sticky; top: 0; z-index: 1; }
 .ua-row { border-bottom: 1px solid var(--border-soft); transition: background .12s ease; }
-.ua-row:hover { background: #fafbff; }
+.ua-row:hover { background: #f2f6ff; }
 .ua-row:last-child { border-bottom: none; }
 .ua-user { display: flex; flex-direction: column; min-width: 0; }
 .ua-user b { font-weight: 650; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -245,6 +275,42 @@ html, body {
 .ua-pos { color: var(--green); }
 .ua-neg { color: #dc2626; }
 .ua-remark { color: var(--muted); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* thin scrollbar for the table */
+.ua-scroll::-webkit-scrollbar { height: 8px; }
+.ua-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 8px; }
+.ua-scroll::-webkit-scrollbar-track { background: #f1f5f9; }
+
+/* Get-ID style report layout: left metric rail + right table */
+.report-layout { display: grid; grid-template-columns: 260px 1fr; gap: 16px; align-items: start; }
+.report-rail { background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: 8px; position: sticky; top: 16px; }
+.report-group-title { font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: #94a3b8; padding: 12px 10px 6px; }
+.report-item { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; text-align: left; border: 0; background: transparent; color: var(--text); font: inherit; font-size: 12.5px; font-weight: 600; padding: 9px 10px; border-radius: 8px; cursor: pointer; }
+.report-item:hover { background: #f1f5f9; }
+.report-item.active { background: #16a34a; color: #fff; }
+.report-item.active .report-badge { background: rgba(255,255,255,.22); color: #fff; }
+.report-item-static { cursor: default; color: var(--muted); font-weight: 600; }
+.report-item-static:hover { background: transparent; }
+.report-badge { background: #eef2f7; color: #475569; font-weight: 700; font-size: 11.5px; border-radius: 999px; padding: 2px 9px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.report-badge-ok { background: #eafaf0; color: var(--green); }
+.report-badge-warn { background: #fff0f0; color: #dc2626; }
+.report-main { min-width: 0; }
+.report-main .panel { margin: 0; }
+@media (max-width: 1050px) { .report-layout { grid-template-columns: 1fr; } .report-rail { position: static; } }
+
+/* CSV match — collapsed slim bar until a file is uploaded */
+.csv-compact { display: flex; align-items: center; margin-bottom: 16px; }
+.csv-compact .panel-head { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.csv-compact-title { font-size: 13px; font-weight: 650; color: var(--muted); }
+
+/* Get-ID style filter bar */
+.report-filterbar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; padding: 4px 0 14px; border-bottom: 1px solid var(--border-soft); margin-bottom: 12px; }
+.ff { display: flex; flex-direction: column; gap: 5px; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: #64748b; }
+.ff-grow { flex: 1; min-width: 220px; }
+.report-scopenote { font-size: 11.5px; color: var(--muted); margin: 0 0 10px; font-weight: 600; }
+.report-pager { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 14px 2px 2px; color: var(--muted); font-size: 12px; }
+.report-pager label { display: inline-flex; align-items: center; gap: 8px; }
+.report-pager select { height: 32px; border: 1px solid var(--border); border-radius: 7px; padding: 0 8px; font: inherit; font-size: 12px; background: #fff; color: var(--text); cursor: pointer; }
+
 
 .date-field { display: flex; flex-direction: column; gap: 4px; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: #64748b; }
 .date-field input { border: 1px solid var(--border); border-radius: 7px; padding: 7px 10px; font: inherit; font-size: 12px; color: var(--text); background: #fff; }
@@ -271,7 +337,6 @@ html, body {
 .modal-close { background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; width: 32px; height: 32px; display: grid; place-items: center; cursor: pointer; color: #475569; }
 .modal-close:hover { color: var(--red); border-color: #fecaca; }
 .modal-txns { max-height: 46vh; overflow: auto; }
-@media (max-width: 1000px) { .ua-head, .ua-row { grid-template-columns: 1.4fr 1.1fr 1fr 0.9fr; } .ua-head span:nth-child(n+5), .ua-row span:nth-child(n+5) { display: none; } }
 
 .spin { animation: ua-spin 0.9s linear infinite; }
 @keyframes ua-spin { to { transform: rotate(360deg); } }

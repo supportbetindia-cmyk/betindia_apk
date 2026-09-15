@@ -1,7 +1,10 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { X, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { Badge } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
 
 type UserTxn = {
   id: number;
@@ -16,7 +19,9 @@ type UserTxn = {
 
 const money = (n: number | null) => (n == null ? '—' : `₹${Math.round(n).toLocaleString('en-IN')}`);
 const when = (iso: string) => new Date(iso).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' });
-const STATUS_CLASS: Record<UserTxn['status'], string> = { approved: 's-completed', rejected: 's-failed', pending: 's-scheduled' };
+const STATUS_VARIANT: Record<UserTxn['status'], 'default' | 'destructive' | 'muted'> = {
+  approved: 'default', rejected: 'destructive', pending: 'muted',
+};
 
 async function fetchUser(userId: string): Promise<UserTxn[]> {
   const res = await fetch(`/api/user-analytics/user?userId=${encodeURIComponent(userId)}`);
@@ -37,56 +42,63 @@ export function UserDetail({ userId, name, mobile, onClose }: {
   const pnl = sum(approvedDep) - sum(approvedWd);
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-card" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-head">
-          <div>
-            <div className="modal-title">{name || userId}</div>
-            <div className="modal-sub">{mobile ? `${mobile} · ` : ''}ID {userId}</div>
-          </div>
-          <button className="modal-close" onClick={onClose} aria-label="Close"><X size={18} /></button>
-        </div>
+    <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{name || userId}</DialogTitle>
+          <DialogDescription className="font-mono">{mobile ? `${mobile} · ` : ''}ID {userId}</DialogDescription>
+        </DialogHeader>
 
-        <div className="kpi-grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 14 }}>
-          <MiniStat label="Deposits" value={money(sum(approvedDep))} sub={`${approvedDep.length} approved`} />
-          <MiniStat label="Withdrawals" value={money(sum(approvedWd))} sub={`${approvedWd.length} approved`} />
-          <MiniStat label="P/L" value={money(pnl)} sub="deposits − withdrawals" tone={pnl >= 0 ? 'pos' : 'neg'} />
-          <MiniStat label="Transactions" value={String(txns.length)} sub="all records" />
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <Stat label="Deposits" value={money(sum(approvedDep))} sub={`${approvedDep.length} approved`} />
+          <Stat label="Withdrawals" value={money(sum(approvedWd))} sub={`${approvedWd.length} approved`} />
+          <Stat label="P/L" value={money(pnl)} sub="dep − wd" tone={pnl >= 0 ? 'pos' : 'neg'} />
+          <Stat label="Transactions" value={String(txns.length)} sub="all records" />
         </div>
 
         {query.isLoading ? (
-          <div className="empty2"><Loader2 size={18} className="spin" /> Loading transactions…</div>
+          <div className="flex items-center gap-2 py-8 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading transactions…</div>
         ) : query.isError ? (
-          <div className="banner2">{(query.error as Error).message}</div>
+          <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{(query.error as Error).message}</div>
         ) : txns.length ? (
-          <div className="ua-table modal-txns">
-            <div className="ua-head" style={{ gridTemplateColumns: '0.8fr 0.9fr 0.9fr 1.4fr 1.2fr' }}>
-              <span>Type</span><span>Amount</span><span>Status</span><span>Remark</span><span>When</span>
-            </div>
-            {txns.map((t) => (
-              <div className="ua-row" key={t.id} style={{ gridTemplateColumns: '0.8fr 0.9fr 0.9fr 1.4fr 1.2fr' }}>
-                <span className={`txn-type t-${t.type}`}>{t.type}</span>
-                <span className="txn-amt">{money(t.amount)}</span>
-                <span className={`notif-status ${STATUS_CLASS[t.status]}`}>{t.status}</span>
-                <span className="ua-remark" title={t.remarks ?? ''}>{t.remarks ?? '—'}</span>
-                <span className="txn-mono">{when(t.created_at)}</span>
-              </div>
-            ))}
+          <div className="max-h-[46vh] overflow-auto rounded-lg border">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 bg-muted/60 text-xs uppercase tracking-wide text-muted-foreground">
+                <tr>
+                  <th className="px-3 py-2 text-left font-semibold">Type</th>
+                  <th className="px-3 py-2 text-right font-semibold">Amount</th>
+                  <th className="px-3 py-2 text-left font-semibold">Status</th>
+                  <th className="px-3 py-2 text-left font-semibold">Remark</th>
+                  <th className="px-3 py-2 text-left font-semibold">When</th>
+                </tr>
+              </thead>
+              <tbody>
+                {txns.map((t) => (
+                  <tr key={t.id} className="border-t">
+                    <td className="px-3 py-2 capitalize">{t.type}</td>
+                    <td className="px-3 py-2 text-right font-semibold tabular-nums">{money(t.amount)}</td>
+                    <td className="px-3 py-2"><Badge variant={STATUS_VARIANT[t.status]} className="capitalize">{t.status}</Badge></td>
+                    <td className="px-3 py-2 max-w-[220px] truncate text-muted-foreground" title={t.remarks ?? ''}>{t.remarks ?? '—'}</td>
+                    <td className="px-3 py-2 whitespace-nowrap font-mono text-xs text-muted-foreground">{when(t.created_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         ) : (
-          <div className="empty2">No transactions on record for this user.</div>
+          <div className="py-8 text-center text-sm text-muted-foreground">No transactions on record for this user.</div>
         )}
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
-function MiniStat({ label, value, sub, tone }: { label: string; value: string; sub: string; tone?: 'pos' | 'neg' }) {
+function Stat({ label, value, sub, tone }: { label: string; value: string; sub: string; tone?: 'pos' | 'neg' }) {
   return (
-    <div className="kpi" style={{ display: 'block' }}>
-      <div className="kpi-label">{label}</div>
-      <div className={`kpi-value ${tone === 'pos' ? 'ua-pos' : tone === 'neg' ? 'ua-neg' : ''}`}>{value}</div>
-      <div className="kpi-delta"><span className="kpi-vs">{sub}</span></div>
+    <div className="rounded-lg border p-3">
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className={cn('mt-1 text-lg font-bold tabular-nums', tone === 'pos' && 'text-primary', tone === 'neg' && 'text-destructive')}>{value}</div>
+      <div className="mt-0.5 text-[11px] text-muted-foreground">{sub}</div>
     </div>
   );
 }

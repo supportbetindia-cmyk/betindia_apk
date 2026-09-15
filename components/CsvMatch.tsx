@@ -142,12 +142,14 @@ export function CsvMatch() {
   }, [result, runImport]);
 
   const list = result ? (view === 'missing' ? result.missing : result.existing) : [];
+  // Collapsed to a slim bar until a file is uploaded — no big empty panel.
+  const idle = !result && !busy && !error;
 
   return (
-    <div className="panel">
-      <div className="panel-head">
-        <h3>Check a CSV against the database</h3>
-        <label className="btn-ghost" style={{ cursor: 'pointer' }}>
+    <div className={idle ? 'csv-compact' : 'panel'}>
+      <div className="panel-head" style={idle ? { marginBottom: 0 } : undefined}>
+        <h3 className={idle ? 'csv-compact-title' : undefined}>Check a CSV against the database</h3>
+        <label className={idle ? 'btn-ghost' : 'btn-primary'} style={{ cursor: 'pointer' }}>
           {busy ? <Loader2 size={15} className="spin" /> : <FileSpreadsheet size={15} />}
           {busy ? 'Checking…' : 'Upload CSV / Excel'}
           <input
@@ -160,14 +162,7 @@ export function CsvMatch() {
         </label>
       </div>
 
-      {error ? <div className="banner2">{error}</div> : null}
-
-      {!result && !error ? (
-        <div className="empty2">
-          Upload a user list (needs a <code>User_ID</code> column). I&apos;ll tell you which users are already in the
-          database and which are new — and let you download either list.
-        </div>
-      ) : null}
+      {error ? <div className="banner2" style={{ marginTop: 12 }}>{error}</div> : null}
 
       {result ? (
         <>

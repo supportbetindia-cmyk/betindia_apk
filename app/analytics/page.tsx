@@ -5,28 +5,22 @@ import { useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { Sidebar } from '@/components/Sidebar';
 import { CsvMatch } from '@/components/CsvMatch';
-import { ActiveUsers } from '@/components/ActiveUsers';
 import { UserDetail } from '@/components/UserDetail';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { RANGE_PRESETS, resolveUiRange, type RangePreset } from '@/lib/ui-range';
-import type { CSSProperties, ReactNode } from 'react';
 import type { UserAnalytics, UserRow, UserStatus } from '@/lib/user-analytics';
 import {
-  BadgeIndianRupee,
   ChevronDown,
   ChevronUp,
   ChevronsUpDown,
-  CircleDollarSign,
   Download,
   Loader2,
   LogOut,
   RefreshCw,
   Search,
   Send,
-  TrendingDown,
-  TrendingUp,
-  UserCheck,
-  UserPlus,
-  UsersRound,
 } from 'lucide-react';
 
 type Data = UserAnalytics & { configured: boolean; error?: string };
@@ -62,26 +56,33 @@ async function fetchBreakdown(from: string, to: string): Promise<UserRow[]> {
   return body.rows ?? [];
 }
 
-type StatusFilter = 'all' | UserStatus | 'depositors' | 'dormant_depositors';
+type StatusFilter = 'all' | UserStatus | 'depositors' | 'dormant_depositors' | 'non_depositors';
 
 const FILTER_OPTIONS: { key: StatusFilter; label: string }[] = [
   { key: 'all', label: 'All' },
   { key: 'depositors', label: 'Depositors' },
+  { key: 'non_depositors', label: 'Never deposited' },
   { key: 'dormant_depositors', label: 'Dormant depositors' },
   { key: 'active', label: 'Active' },
   { key: 'lapsed', label: 'Lapsed' },
   { key: 'dormant', label: 'Dormant' },
   { key: 'registered_only', label: 'No activity' },
 ];
-type SortKey = 'name' | 'registerDate' | 'firstDepositAmount' | 'depositTotal' | 'withdrawalTotal' | 'pnl' | 'lastActivityAt';
+type SortKey = 'name' | 'registerDate' | 'firstDepositAmount' | 'depositTotal' | 'withdrawalTotal' | 'pnl' | 'lossCommission' | 'lastActivityAt';
 type SortDir = 'asc' | 'desc';
 
 const NUM_KEYS: SortKey[] = ['firstDepositAmount', 'depositTotal', 'withdrawalTotal', 'pnl'];
 const DATE_KEYS: SortKey[] = ['registerDate', 'lastActivityAt'];
 
+// Loss commission = 3% of the player's net loss (deposits − withdrawals), only
+// when they are net-down. No commission when the player is net-up.
+const LOSS_COMMISSION_RATE = 0.03;
+const lossCommission = (pnl: number) => (pnl > 0 ? Math.round(pnl * LOSS_COMMISSION_RATE) : 0);
+
 function compareRows(a: UserRow, b: UserRow, key: SortKey, dir: SortDir): number {
   const mult = dir === 'asc' ? 1 : -1;
   if (key === 'name') return mult * (a.name ?? a.userId).localeCompare(b.name ?? b.userId);
+  if (key === 'lossCommission') return mult * (lossCommission(a.pnl) - lossCommission(b.pnl));
   if (NUM_KEYS.includes(key)) {
     const av = (a[key] as number | null) ?? -Infinity;
     const bv = (b[key] as number | null) ?? -Infinity;
@@ -100,7 +101,8 @@ export default function AnalyticsPage() {
   const router = useRouter();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
-  const [visibleCount, setVisibleCount] = useState(100);
+  const [masterFilter, setMasterFilter] = useState('');
+  const [visibleCount, setVisibleCount] = useState(50);
   const [sortKey, setSortKey] = useState<SortKey>('depositTotal');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
   const [selected, setSelected] = useState<UserRow | null>(null);
@@ -169,6 +171,12 @@ export default function AnalyticsPage() {
   const t = data?.totals;
   const tableSource = scoped ? (breakdownQuery.data ?? []) : (data?.users ?? []);
 
+  // Distinct Master / Branch IDs for the "Select Master" filter.
+  const masters = useMemo(
+    () => Array.from(new Set((data?.users ?? []).map((u) => u.branchId).filter((b): b is string => Boolean(b)))).sort(),
+    [data]
+  );
+
   const logout = useCallback(async () => {
     await fetch('/api/logout', { method: 'POST' });
     router.replace('/login');
@@ -179,8 +187,10 @@ export default function AnalyticsPage() {
     const q = search.trim().toLowerCase();
     return tableSource.filter((r) => {
       if (statusFilter === 'depositors' && !r.depositor) return false;
+      if (statusFilter === 'non_depositors' && r.depositor) return false;
       if (statusFilter === 'dormant_depositors' && !(r.depositor && r.status === 'dormant')) return false;
-      if (statusFilter !== 'all' && statusFilter !== 'depositors' && statusFilter !== 'dormant_depositors' && r.status !== statusFilter) return false;
+      if (statusFilter !== 'all' && statusFilter !== 'depositors' && statusFilter !== 'non_depositors' && statusFilter !== 'dormant_depositors' && r.status !== statusFilter) return false;
+      if (masterFilter && r.branchId !== masterFilter) return false;
       if (!q) return true;
       return (
         (r.name ?? '').toLowerCase().includes(q) ||
@@ -188,7 +198,7 @@ export default function AnalyticsPage() {
         r.userId.toLowerCase().includes(q)
       );
     });
-  }, [tableSource, search, statusFilter]);
+  }, [tableSource, search, statusFilter, masterFilter]);
 
   const sorted = useMemo(
     () => [...filtered].sort((a, b) => compareRows(a, b, sortKey, sortDir)),
@@ -220,12 +230,12 @@ export default function AnalyticsPage() {
   }, []);
 
   const downloadCsv = useCallback(() => {
-    const head = 'User_ID,Name,Mobile,Registered,First_Deposit_Amount,First_Deposit_Date,Deposits,Deposit_Count,Withdrawals,Withdrawal_Count,PnL,Last_Active,Status,Last_Remark\n';
+    const head = 'User_ID,Master_ID,Name,Mobile,Registered,First_Deposit_Amount,First_Deposit_Date,Deposits,Deposit_Count,Withdrawals,Withdrawal_Count,PnL,Loss_Commission_3pct,Last_Active,Status,Last_Remark\n';
     const esc = (v: string) => `"${v.replace(/"/g, '""')}"`;
     const body = sorted.map((r) => [
-      r.userId, esc(r.name ?? ''), r.mobile ?? '', r.registerDate ?? '',
+      r.userId, r.branchId ?? '', esc(r.name ?? ''), r.mobile ?? '', r.registerDate ?? '',
       r.firstDepositAmount ?? '', r.firstDepositAt ?? '',
-      r.depositTotal, r.depositCount, r.withdrawalTotal, r.withdrawalCount, r.pnl,
+      r.depositTotal, r.depositCount, r.withdrawalTotal, r.withdrawalCount, r.pnl, lossCommission(r.pnl),
       r.lastActivityAt ?? '', r.status, esc(r.lastRemark ?? ''),
     ].join(',')).join('\n');
     const blob = new Blob([head + body], { type: 'text/csv;charset=utf-8;' });
@@ -236,6 +246,23 @@ export default function AnalyticsPage() {
     a.click();
     URL.revokeObjectURL(url);
   }, [sorted]);
+
+  const totalLossComm = useMemo(
+    () => (data?.users ?? []).reduce((s, r) => s + lossCommission(r.pnl), 0),
+    [data]
+  );
+
+  // Left-rail clicks: apply a lifetime status filter, or an activity date scope.
+  const railFilter = useCallback((f: StatusFilter) => {
+    setStatusFilter(f); setTablePreset('all'); setVisibleCount(100);
+  }, []);
+  const railActive = useCallback((preset: RangePreset) => {
+    setTablePreset(preset); setStatusFilter('all'); setVisibleCount(50);
+  }, []);
+  // Scope the table to today and sort by the chosen money column.
+  const railToday = useCallback((key: SortKey) => {
+    setTablePreset('today'); setStatusFilter('all'); setSortKey(key); setSortDir('desc'); setVisibleCount(50);
+  }, []);
 
   return (
     <div className="shell">
@@ -271,94 +298,116 @@ export default function AnalyticsPage() {
           <>
             <CsvMatch />
 
-            {/* AUDIENCE / REGISTRATION */}
-            <div className="kpi-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
-              <MiniCard label="Registered Users" value={(t?.registeredUsers ?? 0).toLocaleString('en-IN')}
-                sub={`+${t?.newRegistrations30d ?? 0} in 30d · +${t?.newRegistrations7d ?? 0} in 7d`}
-                color="#4f46e5" icon={<UsersRound size={20} />} />
-              <MiniCard label="Depositors (FTD made)" value={(t?.depositors ?? 0).toLocaleString('en-IN')}
-                sub={`${t?.ftdConversionPct ?? 0}% of registered converted`}
-                color="#059669" icon={<UserCheck size={20} />} />
-              <MiniCard label="Never Deposited" value={(t?.neverDeposited ?? 0).toLocaleString('en-IN')}
-                sub="registered · no approved deposit" color="#ca8a04" icon={<UserPlus size={20} />} />
-              <MiniCard label="Avg First Deposit" value={money(t?.avgFirstDeposit ?? 0)}
-                sub="mean FTD amount" color="#7c3aed" icon={<BadgeIndianRupee size={20} />} />
-            </div>
+            {/* REPORT LAYOUT: left metric rail (Get-ID style) + right table */}
+            <div className="report-layout">
+              <aside className="report-rail">
+                <div className="report-group-title">Overview</div>
+                <button className={`report-item${statusFilter === 'all' && !scoped ? ' active' : ''}`} onClick={() => railFilter('all')}>
+                  <span>Registered Users</span><span className="report-badge">{(t?.registeredUsers ?? 0).toLocaleString('en-IN')}</span>
+                </button>
+                <button className={`report-item${statusFilter === 'depositors' ? ' active' : ''}`} onClick={() => railFilter('depositors')}>
+                  <span>Depositors (FTD)</span><span className="report-badge report-badge-ok">{(t?.depositors ?? 0).toLocaleString('en-IN')}</span>
+                </button>
+                <button className={`report-item${statusFilter === 'non_depositors' ? ' active' : ''}`} onClick={() => railFilter('non_depositors')}>
+                  <span>Never Deposited</span><span className="report-badge">{(t?.neverDeposited ?? 0).toLocaleString('en-IN')}</span>
+                </button>
+                <div className="report-item report-item-static">
+                  <span>Avg First Deposit</span><span className="report-badge">{money(t?.avgFirstDeposit ?? 0)}</span>
+                </div>
 
-            {/* ACTIVITY */}
-            <div className="kpi-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
-              <MiniCard label="Active Today" value={(t?.activeUsersToday ?? 0).toLocaleString('en-IN')}
-                sub="transacted since midnight (IST)" color="#0ea5e9" icon={<TrendingUp size={20} />} />
-              <MiniCard label="Active (7d)" value={(t?.activeUsers7d ?? 0).toLocaleString('en-IN')}
-                sub="transacted in last 7 days" color="#16a34a" icon={<TrendingUp size={20} />} />
-              <MiniCard label="Active (30d)" value={(t?.activeUsers30d ?? 0).toLocaleString('en-IN')}
-                sub="transacted in last 30 days" color="#2563eb" icon={<UsersRound size={20} />} />
-              <MiniCard label="Dormant Depositors" value={(t?.dormantDepositors ?? 0).toLocaleString('en-IN')}
-                sub="deposited before · silent 30d+ · click to view" color="#dc2626" icon={<TrendingDown size={20} />}
-                onClick={showDormantDepositors} />
-              <MiniCard label="Net P/L (house)" value={money(t?.netPnl ?? 0)}
-                sub={`${money(t?.depositTotal ?? 0)} in − ${money(t?.withdrawalTotal ?? 0)} out`}
-                color="#0f766e" icon={<CircleDollarSign size={20} />} />
-            </div>
+                <div className="report-group-title">Activity</div>
+                <button className={`report-item${scoped && tablePreset === 'today' ? ' active' : ''}`} onClick={() => railActive('today')}>
+                  <span>Active Today</span><span className="report-badge">{(t?.activeUsersToday ?? 0).toLocaleString('en-IN')}</span>
+                </button>
+                <button className={`report-item${scoped && tablePreset === '7d' ? ' active' : ''}`} onClick={() => railActive('7d')}>
+                  <span>Active 7 Days</span><span className="report-badge">{(t?.activeUsers7d ?? 0).toLocaleString('en-IN')}</span>
+                </button>
+                <button className={`report-item${scoped && tablePreset === '30d' ? ' active' : ''}`} onClick={() => railActive('30d')}>
+                  <span>Active 30 Days</span><span className="report-badge">{(t?.activeUsers30d ?? 0).toLocaleString('en-IN')}</span>
+                </button>
+                <button className={`report-item${statusFilter === 'dormant_depositors' ? ' active' : ''}`} onClick={showDormantDepositors}>
+                  <span>Dormant Depositors</span><span className="report-badge report-badge-warn">{(t?.dormantDepositors ?? 0).toLocaleString('en-IN')}</span>
+                </button>
 
-            <ActiveUsers />
+                <div className="report-group-title">Today</div>
+                <button className={`report-item${scoped && tablePreset === 'today' && sortKey === 'depositTotal' ? ' active' : ''}`} onClick={() => railToday('depositTotal')}>
+                  <span>Today Deposit</span><span className="report-badge report-badge-ok">{money(t?.todayDepositTotal ?? 0)}</span>
+                </button>
+                <button className={`report-item${scoped && tablePreset === 'today' && sortKey === 'withdrawalTotal' ? ' active' : ''}`} onClick={() => railToday('withdrawalTotal')}>
+                  <span>Today Withdrawal</span><span className="report-badge">{money(t?.todayWithdrawalTotal ?? 0)}</span>
+                </button>
 
-            {/* PER-USER TABLE */}
-            <div className="panel" ref={tableRef}>
-              <div className="panel-head">
-                <h3>Per-User Breakdown</h3>
-                <div className="txn-toolbar">
-                  <label className="txn-search">
-                    <Search size={15} aria-hidden="true" />
-                    <input
-                      value={search}
-                      onChange={(e) => { setSearch(e.target.value); setVisibleCount(100); }}
-                      placeholder="Search name, mobile or user ID"
-                      aria-label="Search users"
-                    />
-                  </label>
-                  <div className="txn-filters">
-                    {FILTER_OPTIONS.map((f) => (
-                      <button
-                        key={f.key}
-                        className={`txn-filter${statusFilter === f.key ? ' active' : ''}`}
-                        onClick={() => { setStatusFilter(f.key); setVisibleCount(100); }}
-                      >
-                        {f.label}
-                      </button>
-                    ))}
+                <div className="report-group-title">Money</div>
+                <div className="report-item report-item-static"><span>Total Deposits</span><span className="report-badge">{money(t?.depositTotal ?? 0)}</span></div>
+                <div className="report-item report-item-static"><span>Total Withdrawals</span><span className="report-badge">{money(t?.withdrawalTotal ?? 0)}</span></div>
+                <div className="report-item report-item-static"><span>Net P/L (house)</span><span className="report-badge">{money(t?.netPnl ?? 0)}</span></div>
+                <div className="report-item report-item-static"><span>Loss Commission 3%</span><span className="report-badge">{money(totalLossComm)}</span></div>
+              </aside>
+
+              <div className="report-main">
+                {/* PER-USER TABLE */}
+                <div className="panel" ref={tableRef}>
+              <div className="panel-head"><h3>Per-User Breakdown</h3></div>
+
+              {/* Get-ID style filter bar (shadcn/ui) */}
+              <div className="report-filterbar">
+                <label className="ff ff-grow">User ID
+                  <div className="relative">
+                    <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                    <Input className="pl-8" value={search} onChange={(e) => { setSearch(e.target.value); setVisibleCount(50); }} placeholder="Search name, mobile or user ID" />
                   </div>
-                  <button className="btn-ghost" onClick={downloadCsv} disabled={!sorted.length}>
-                    <Download size={15} /> Download CSV
-                  </button>
-                </div>
-              </div>
-
-              {/* DATE-RANGE SCOPE for the table numbers */}
-              <div className="txn-toolbar ua-scopebar">
-                <div className="txn-filters">
-                  {RANGE_PRESETS.map((p) => (
-                    <button
-                      key={p.key}
-                      className={`txn-filter${tablePreset === p.key ? ' active' : ''}`}
-                      onClick={() => { setTablePreset(p.key); setVisibleCount(100); }}
-                    >
-                      {p.label}
-                    </button>
-                  ))}
-                </div>
+                </label>
+                <label className="ff">Segment
+                  <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v as StatusFilter); setVisibleCount(50); }}>
+                    <SelectTrigger className="w-[168px]"><SelectValue /></SelectTrigger>
+                    <SelectContent>{FILTER_OPTIONS.map((f) => <SelectItem key={f.key} value={f.key}>{f.label}</SelectItem>)}</SelectContent>
+                  </Select>
+                </label>
+                <label className="ff">Select Master
+                  <Select value={masterFilter || 'ALL'} onValueChange={(v) => { setMasterFilter(v === 'ALL' ? '' : v); setVisibleCount(50); }}>
+                    <SelectTrigger className="w-[150px]"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ALL">All Masters</SelectItem>
+                      {masters.map((m) => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </label>
+                <label className="ff">Select by Date
+                  <Select value={tablePreset} onValueChange={(v) => { setTablePreset(v as RangePreset); setVisibleCount(50); }}>
+                    <SelectTrigger className="w-[150px]"><SelectValue /></SelectTrigger>
+                    <SelectContent>{RANGE_PRESETS.map((p) => <SelectItem key={p.key} value={p.key}>{p.label}</SelectItem>)}</SelectContent>
+                  </Select>
+                </label>
+                <label className="ff">Order by
+                  <Select value={`${sortKey}:${sortDir}`} onValueChange={(v) => { const [k, d] = v.split(':'); setSortKey(k as SortKey); setSortDir(d as SortDir); }}>
+                    <SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="depositTotal:desc">Deposits ↓</SelectItem>
+                      <SelectItem value="withdrawalTotal:desc">Withdrawals ↓</SelectItem>
+                      <SelectItem value="pnl:desc">P/L ↓</SelectItem>
+                      <SelectItem value="lossCommission:desc">Loss Comm ↓</SelectItem>
+                      <SelectItem value="firstDepositAmount:desc">First Deposit ↓</SelectItem>
+                      <SelectItem value="registerDate:desc">Newest reg ↓</SelectItem>
+                      <SelectItem value="lastActivityAt:desc">Recently active ↓</SelectItem>
+                      <SelectItem value="name:asc">Name A–Z</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </label>
                 {tablePreset === 'custom' ? (
-                  <div className="txn-toolbar" style={{ gap: 10 }}>
-                    <label className="date-field">From<input type="date" value={tableFrom} max={today} onChange={(e) => setTableFrom(e.target.value)} /></label>
-                    <label className="date-field">To<input type="date" value={tableTo} max={today} onChange={(e) => setTableTo(e.target.value)} /></label>
-                  </div>
+                  <>
+                    <label className="ff">From<Input type="date" className="w-[150px]" value={tableFrom} max={today} onChange={(e) => setTableFrom(e.target.value)} /></label>
+                    <label className="ff">To<Input type="date" className="w-[150px]" value={tableTo} max={today} onChange={(e) => setTableTo(e.target.value)} /></label>
+                  </>
                 ) : null}
-                <span className="panel-note" style={{ margin: 0 }}>
-                  {scoped
-                    ? `Deposits / Withdrawals / P/L shown for ${tableRange?.label ?? 'this range'} · ${filtered.length.toLocaleString('en-IN')} active users`
-                    : 'Showing lifetime totals per user'}
-                  {scoped && breakdownQuery.isFetching ? ' · loading…' : ''}
-                </span>
+                <Button onClick={() => { void query.refetch(); if (scoped) void breakdownQuery.refetch(); }}>Go</Button>
+                <Button variant="outline" onClick={downloadCsv} disabled={!sorted.length}><Download className="h-3.5 w-3.5" /> CSV</Button>
+              </div>
+              <div className="report-scopenote">
+                {scoped
+                  ? `Showing ${tableRange?.label ?? 'range'} · ${filtered.length.toLocaleString('en-IN')} users`
+                  : `Lifetime totals · ${filtered.length.toLocaleString('en-IN')} users`}
+                {masterFilter ? ` · Master ${masterFilter}` : ''}
+                {scoped && breakdownQuery.isFetching ? ' · loading…' : ''}
               </div>
 
               {statusFilter === 'dormant_depositors' ? (
@@ -389,23 +438,30 @@ export default function AnalyticsPage() {
               ) : null}
 
               {rows.length ? (
-                <div className="ua-table">
+                <>
+                <div className="ua-scroll">
+                  <div className="ua-table">
                   <div className="ua-head">
+                    <span>S.No</span>
                     <SortTh label="User" k="name" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                    <span>Master ID</span>
                     <SortTh label="Registered" k="registerDate" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                     <SortTh label="First Deposit" k="firstDepositAmount" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                     <SortTh label="Deposits" k="depositTotal" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                     <SortTh label="Withdrawals" k="withdrawalTotal" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                     <SortTh label="P/L" k="pnl" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                    <SortTh label="Loss Comm. 3%" k="lossCommission" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                     <SortTh label="Last Active" k="lastActivityAt" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                     <span>Status</span><span>Last Remark</span>
                   </div>
-                  {rows.map((r) => (
+                  {rows.map((r, i) => (
                     <div className="ua-row ua-row-click" key={r.userId} onClick={() => setSelected(r)} title="View transactions">
+                      <span className="txn-mono">{i + 1}</span>
                       <span className="ua-user" title={r.userId}>
                         <b>{r.name ?? r.userId}</b>
                         <small>{r.mobile ?? r.userId}</small>
                       </span>
+                      <span className="txn-mono">{r.branchId ?? '—'}</span>
                       <span className="txn-mono">{dateShort(r.registerDate)}</span>
                       <span className="txn-mono" title={r.firstDepositAt ?? ''}>
                         {r.firstDepositAmount != null ? `${money(r.firstDepositAmount)} · ${dateShort(r.firstDepositAt)}` : '—'}
@@ -413,20 +469,27 @@ export default function AnalyticsPage() {
                       <span className="txn-amt">{r.depositCount ? money(r.depositTotal) : '—'}</span>
                       <span className="txn-amt">{r.withdrawalCount ? money(r.withdrawalTotal) : '—'}</span>
                       <span className={`txn-amt ${r.pnl >= 0 ? 'ua-pos' : 'ua-neg'}`}>{money(r.pnl)}</span>
+                      <span className="txn-amt">{lossCommission(r.pnl) ? money(lossCommission(r.pnl)) : '—'}</span>
                       <span className="txn-mono">{dateShort(r.lastActivityAt)}</span>
                       <span className={`notif-status ${STATUS_CLASS[r.status]}`}>{STATUS_LABEL[r.status]}</span>
                       <span className="ua-remark" title={r.lastRemark ?? ''}>{r.lastRemark ?? '—'}</span>
                     </div>
                   ))}
-                  {filtered.length > rows.length ? (
-                    <div className="txn-load-more">
-                      <span>Showing {rows.length} of {filtered.length.toLocaleString('en-IN')}</span>
-                      <button onClick={() => setVisibleCount((c) => c + 100)}>Load more</button>
-                    </div>
-                  ) : (
-                    <div className="txn-load-more"><span>Showing all {filtered.length.toLocaleString('en-IN')}</span></div>
-                  )}
+                  </div>
                 </div>
+                <div className="report-pager">
+                  <span>Showing {Math.min(rows.length, filtered.length).toLocaleString('en-IN')} of {filtered.length.toLocaleString('en-IN')}</span>
+                  <label>show
+                    <select value={String(visibleCount)} onChange={(e) => setVisibleCount(Number(e.target.value))}>
+                      <option value="50">50</option>
+                      <option value="100">100</option>
+                      <option value="200">200</option>
+                      <option value="100000">All</option>
+                    </select>
+                    entries
+                  </label>
+                </div>
+                </>
               ) : (
                 <div className="empty2">
                   {(scoped ? breakdownQuery.isLoading : query.isLoading)
@@ -436,6 +499,8 @@ export default function AnalyticsPage() {
                       : 'No users match this search or filter.'}
                 </div>
               )}
+                </div>
+              </div>
             </div>
 
             <div className="footer-note">
@@ -470,22 +535,3 @@ function SortTh({ label, k, sortKey, sortDir, onSort }: {
   );
 }
 
-function MiniCard({ label, value, sub, color, icon, onClick }: {
-  label: string; value: string; sub: string; color: string; icon: ReactNode; onClick?: () => void;
-}) {
-  return (
-    <div
-      className={`kpi${onClick ? ' kpi-click' : ''}`}
-      style={{ '--accent': color } as CSSProperties}
-      onClick={onClick}
-      role={onClick ? 'button' : undefined}
-    >
-      <div className="kpi-icon">{icon}</div>
-      <div className="kpi-body">
-        <div className="kpi-label">{label}</div>
-        <div className="kpi-value">{value}</div>
-        <div className="kpi-delta"><span className="kpi-vs">{sub}</span></div>
-      </div>
-    </div>
-  );
-}
