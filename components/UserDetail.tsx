@@ -45,7 +45,7 @@ export function UserDetail({ userId, name, mobile, onClose }: {
     <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{name || userId}</DialogTitle>
+          <DialogTitle>{name && name !== '0' ? name : userId}</DialogTitle>
           <DialogDescription className="font-mono">{mobile ? `${mobile} · ` : ''}ID {userId}</DialogDescription>
         </DialogHeader>
 

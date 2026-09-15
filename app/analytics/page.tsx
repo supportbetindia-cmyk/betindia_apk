@@ -458,7 +458,7 @@ export default function AnalyticsPage() {
                     <div className="ua-row ua-row-click" key={r.userId} onClick={() => setSelected(r)} title="View transactions">
                       <span className="txn-mono">{i + 1}</span>
                       <span className="ua-user" title={r.userId}>
-                        <b>{r.name ?? r.userId}</b>
+                        <b>{r.name && r.name !== '0' ? r.name : r.userId}</b>
                         <small>{r.mobile ?? r.userId}</small>
                       </span>
                       <span className="txn-mono">{r.branchId ?? '—'}</span>

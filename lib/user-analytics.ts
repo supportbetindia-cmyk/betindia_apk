@@ -174,7 +174,7 @@ export function buildUserAnalytics(
     const id = String(u.user_id);
     const row = ensure(id);
     row.registered = true;
-    if (u.name) row.name = u.name;
+    if (u.name && u.name !== '0') row.name = u.name; // "0" is a junk placeholder
     if (u.mobile) row.mobile = u.mobile;
     if (isRealBranch(u.branch_id)) row.branchId = u.branch_id;
     if (u.register_date) row.registerDate = u.register_date;
@@ -205,7 +205,7 @@ export function buildUserAnalytics(
     if (!t.user_id) continue;
     const id = String(t.user_id);
     const row = ensure(id);
-    if (!row.name && t.user_name) row.name = t.user_name;
+    if ((!row.name || row.name === '0') && t.user_name && t.user_name !== '0') row.name = t.user_name;
     if (!row.mobile && t.mobile_number) row.mobile = t.mobile_number;
     if (!row.branchId && isRealBranch(t.branch_id)) row.branchId = t.branch_id;
 
@@ -474,10 +474,10 @@ export async function fetchUserBreakdown(fromIso: string, toIso: string, nowMs =
     if (!row) {
       row = newRow(id);
       const m = meta.get(id);
-      if (m) { row.registered = true; row.name = m.name; row.mobile = m.mobile; row.registerDate = m.register_date; row.branchId = isRealBranch(m.branch_id) ? m.branch_id : null; }
+      if (m) { row.registered = true; row.name = m.name && m.name !== '0' ? m.name : null; row.mobile = m.mobile; row.registerDate = m.register_date; row.branchId = isRealBranch(m.branch_id) ? m.branch_id : null; }
       map.set(id, row);
     }
-    if (!row.name && t.user_name) row.name = t.user_name;
+    if ((!row.name || row.name === '0') && t.user_name && t.user_name !== '0') row.name = t.user_name;
     if (!row.mobile && t.mobile_number) row.mobile = t.mobile_number;
     if (!row.branchId && isRealBranch(t.branch_id)) row.branchId = t.branch_id;
 

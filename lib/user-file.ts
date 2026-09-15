@@ -142,7 +142,8 @@ function mapRow(record: Record<string, string>): ParsedUser | null {
     user_id: userId,
     branch_id: field(record, /^branch[\s_]*id$/i) || null,
     mobile: field(record, /^phone[\s_]*number$/i, /^mobile$/i, /^phone$/i) || null,
-    name: field(record, /^name$/i) || null,
+    // Some report rows carry "0" as a placeholder name — treat it as no name.
+    name: (() => { const n = field(record, /^name$/i); return n && n !== '0' ? n : null; })(),
     language: field(record, /^language$/i) || null,
     register_date: parseDate(field(record, /^regist(ration|er)?[\s_]*date$/i, /^registered[\s_]*at$/i)),
     raw: record,
