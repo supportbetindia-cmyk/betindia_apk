@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { fetchUserBreakdown } from '@/lib/user-analytics';
+import { getRequestTenantId } from '@/lib/tenant-server';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -14,7 +15,8 @@ export async function GET(req: Request) {
     if (Number.isNaN(Date.parse(from)) || Number.isNaN(Date.parse(to))) {
       return NextResponse.json({ error: 'Invalid from/to timestamp.' }, { status: 400 });
     }
-    const rows = await fetchUserBreakdown(from, to);
+    const tenantId = await getRequestTenantId();
+    const rows = await fetchUserBreakdown(tenantId, from, to);
     return NextResponse.json({ configured: true, rows, from, to });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

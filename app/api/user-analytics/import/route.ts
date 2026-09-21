@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { importUserRows, type ImportUserRow } from '@/lib/user-analytics';
+import { getRequestTenantId } from '@/lib/tenant-server';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -13,7 +14,8 @@ export async function POST(req: Request) {
     if (!valid.length) {
       return NextResponse.json({ error: 'No users to import.' }, { status: 400 });
     }
-    const imported = await importUserRows(valid);
+    const tenantId = await getRequestTenantId();
+    const imported = await importUserRows(valid, tenantId);
     return NextResponse.json({ configured: true, imported });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

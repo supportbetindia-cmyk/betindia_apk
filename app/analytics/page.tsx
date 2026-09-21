@@ -6,6 +6,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Sidebar } from '@/components/Sidebar';
 import { CsvMatch } from '@/components/CsvMatch';
 import { UserDetail } from '@/components/UserDetail';
+import { GrowthPanel } from '@/components/GrowthPanel';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -296,6 +297,8 @@ export default function AnalyticsPage() {
           </div>
         ) : (
           <>
+            <GrowthPanel />
+
             <CsvMatch />
 
             {/* REPORT LAYOUT: left metric rail (Get-ID style) + right table */}

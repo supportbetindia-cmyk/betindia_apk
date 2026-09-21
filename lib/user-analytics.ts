@@ -9,6 +9,8 @@
 // sends "reject_completed", which contains "complet" — so an approve-first regex
 // (like storedReconciliation) would wrongly count rejected rows as approved.
 
+import { getCurrentTenantId } from './tenant';
+
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -370,7 +372,7 @@ export type ImportUserRow = {
 
 /** Upsert users into the users table, preserving the full CSV row in `raw`.
  * on_conflict=user_id + merge-duplicates so re-imports update instead of erroring. */
-export async function importUserRows(rows: ImportUserRow[]): Promise<number> {
+export async function importUserRows(rows: ImportUserRow[], tenantId: string = getCurrentTenantId()): Promise<number> {
   if (!SUPABASE_URL || !SERVICE_ROLE) throw new Error('Supabase not configured');
   let count = 0;
   for (let i = 0; i < rows.length; i += 500) {
@@ -387,6 +389,7 @@ export async function importUserRows(rows: ImportUserRow[]): Promise<number> {
           language: u.language ?? null,
           register_date: u.register_date ?? null,
           raw: u.raw ?? null,
+          tenant_id: tenantId,
           updated_at: new Date().toISOString(),
           // Only stamp CRM financial columns when the file carried them, so a
           // basic user upload never wipes previously-synced report data.
@@ -433,9 +436,9 @@ export type ActiveUsersResult = {
 
 /** DISTINCT users with at least one transaction in [fromIso, toIso), plus a
  * per-day breakdown. Works for any window (incl. past custom ranges). */
-export async function activeUsers(fromIso: string, toIso: string): Promise<ActiveUsersResult> {
+export async function activeUsers(tenantId: string, fromIso: string, toIso: string): Promise<ActiveUsersResult> {
   const rows = await fetchAll<{ user_id: string | null; created_at: string }>(
-    `transactions?select=user_id,created_at&created_at=gte.${encodeURIComponent(fromIso)}&created_at=lt.${encodeURIComponent(toIso)}`
+    `transactions?select=user_id,created_at&tenant_id=eq.${encodeURIComponent(tenantId)}&created_at=gte.${encodeURIComponent(fromIso)}&created_at=lt.${encodeURIComponent(toIso)}`
   );
   const all = new Set<string>();
   const byDay = new Map<string, Set<string>>();
@@ -457,11 +460,12 @@ export async function activeUsers(fromIso: string, toIso: string): Promise<Activ
 /** Per-user breakdown scoped to a time window: each user's deposits, withdrawals,
  * P/L, first deposit and last activity computed ONLY from transactions in
  * [fromIso, toIso). Only users with activity in the window are returned. */
-export async function fetchUserBreakdown(fromIso: string, toIso: string, nowMs = Date.now()): Promise<UserRow[]> {
+export async function fetchUserBreakdown(tenantId: string, fromIso: string, toIso: string, nowMs = Date.now()): Promise<UserRow[]> {
+  const t = `&tenant_id=eq.${encodeURIComponent(tenantId)}`;
   const [users, txns] = await Promise.all([
-    fetchAll<AnalyticsUser>('users?select=user_id,branch_id,name,mobile,register_date'),
+    fetchAll<AnalyticsUser>(`users?select=user_id,branch_id,name,mobile,register_date${t}`),
     fetchAll<AnalyticsTxn>(
-      `transactions?select=type,user_id,branch_id,user_name,mobile_number,amount,payment_status,remarks,created_at&created_at=gte.${encodeURIComponent(fromIso)}&created_at=lt.${encodeURIComponent(toIso)}&order=created_at.asc`
+      `transactions?select=type,user_id,branch_id,user_name,mobile_number,amount,payment_status,remarks,created_at&created_at=gte.${encodeURIComponent(fromIso)}&created_at=lt.${encodeURIComponent(toIso)}&order=created_at.asc${t}`
     ),
   ]);
   const meta = new Map(users.map((u) => [String(u.user_id).trim(), u]));
@@ -531,9 +535,9 @@ function classifyStatus(status: string | null): UserTxn['status'] {
 }
 
 /** All transactions for one user, newest first, with a normalised status. */
-export async function fetchUserTransactions(userId: string): Promise<UserTxn[]> {
+export async function fetchUserTransactions(tenantId: string, userId: string): Promise<UserTxn[]> {
   const rows = await fetchAll<Omit<UserTxn, 'status'>>(
-    `transactions?select=id,type,transaction_id,amount,payment_status,remarks,created_at&user_id=eq.${encodeURIComponent(userId)}&order=created_at.desc`
+    `transactions?select=id,type,transaction_id,amount,payment_status,remarks,created_at&tenant_id=eq.${encodeURIComponent(tenantId)}&user_id=eq.${encodeURIComponent(userId)}&order=created_at.desc`
   );
   return rows.map((r) => ({ ...r, status: classifyStatus(r.payment_status) }));
 }
@@ -546,8 +550,8 @@ export type MatchResult = {
 };
 
 /** Diff an uploaded list of user IDs against the users table (the DB key). */
-export async function matchUserIds(ids: string[]): Promise<MatchResult> {
-  const rows = await fetchAll<{ user_id: string }>('users?select=user_id');
+export async function matchUserIds(tenantId: string, ids: string[]): Promise<MatchResult> {
+  const rows = await fetchAll<{ user_id: string }>(`users?select=user_id&tenant_id=eq.${encodeURIComponent(tenantId)}`);
   const known = new Set(rows.map((r) => String(r.user_id).trim()));
 
   const existing: string[] = [];
@@ -563,12 +567,13 @@ export async function matchUserIds(ids: string[]): Promise<MatchResult> {
   return { uploaded: ids.length, unique: seen.size, existing, missing };
 }
 
-/** Fetch every user + transaction row and build the analytics. */
-export async function fetchUserAnalytics(nowMs = Date.now()): Promise<UserAnalytics> {
+/** Fetch every user + transaction row FOR ONE TENANT and build the analytics. */
+export async function fetchUserAnalytics(tenantId: string, nowMs = Date.now()): Promise<UserAnalytics> {
+  const t = `&tenant_id=eq.${encodeURIComponent(tenantId)}`;
   const [users, txns] = await Promise.all([
-    fetchAll<AnalyticsUser>('users?select=user_id,branch_id,name,mobile,register_date,first_deposit_date,first_deposit_amount,last_deposit_date,last_withdrawal_date,total_deposit,deposit_count,total_withdrawal,withdrawal_count,status_label'),
+    fetchAll<AnalyticsUser>(`users?select=user_id,branch_id,name,mobile,register_date,first_deposit_date,first_deposit_amount,last_deposit_date,last_withdrawal_date,total_deposit,deposit_count,total_withdrawal,withdrawal_count,status_label${t}`),
     fetchAll<AnalyticsTxn>(
-      'transactions?select=type,user_id,branch_id,user_name,mobile_number,amount,payment_status,remarks,created_at&order=created_at.asc'
+      `transactions?select=type,user_id,branch_id,user_name,mobile_number,amount,payment_status,remarks,created_at&order=created_at.asc${t}`
     ),
   ]);
   return buildUserAnalytics(users, txns, nowMs);

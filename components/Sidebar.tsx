@@ -5,24 +5,45 @@ import { usePathname } from 'next/navigation';
 import {
   BarChart3,
   BellRing,
+  Building2,
   CreditCard,
+  Users,
   LineChart,
+  Webhook,
   MessageCircleMore,
   Megaphone,
+  PiggyBank,
+  Settings,
+  Target,
+  TrendingUp,
   Zap,
   type LucideIcon,
 } from 'lucide-react';
 
-// Only routes that are actually wired up. Add more here as pages are built.
-const NAV = [
-  { icon: BarChart3, label: 'Dashboard', href: '/' },
-  { icon: LineChart, label: 'User Analytics', href: '/analytics' },
-  { icon: CreditCard, label: 'Transactions', href: '/transactions' },
-  { icon: BellRing, label: 'Push Notifications', href: '/notifications' },
-  { icon: MessageCircleMore, label: 'WhatsApp CRM', href: '/whatsapp' },
-  { icon: Zap, label: 'Automations', href: '/automations' },
-  { icon: Megaphone, label: 'Campaigns', href: '/campaigns' },
-] satisfies Array<{ icon: LucideIcon; label: string; href: string }>;
+type NavItem = { icon: LucideIcon; label: string; href: string };
+const NAV: Array<{ label: string; items: NavItem[] }> = [
+  { label: 'Manage', items: [
+    { icon: TrendingUp, label: 'Overview', href: '/overview' },
+    { icon: Target, label: 'Targets', href: '/targets' },
+    { icon: PiggyBank, label: 'Profit split', href: '/profit' },
+    { icon: Users, label: 'Players', href: '/customers' },
+    { icon: CreditCard, label: 'Transactions', href: '/transactions' },
+    { icon: Webhook, label: 'Webhooks', href: '/webhooks' },
+  ] },
+  { label: 'Engage', items: [
+    { icon: MessageCircleMore, label: 'WhatsApp', href: '/whatsapp' },
+    { icon: Megaphone, label: 'Campaigns', href: '/campaigns' },
+    { icon: Zap, label: 'Automations', href: '/automations' },
+    { icon: BellRing, label: 'Push notifications', href: '/notifications' },
+  ] },
+  { label: 'Analyse', items: [
+    { icon: BarChart3, label: 'Product analytics', href: '/' },
+    { icon: LineChart, label: 'Player analytics', href: '/analytics' },
+  ] },
+  { label: 'Configure', items: [
+    { icon: Settings, label: 'WhatsApp settings', href: '/settings/whatsapp' },
+  ] },
+];
 
 export function Sidebar({
   quickStats = [],
@@ -34,23 +55,22 @@ export function Sidebar({
   return (
     <aside className="sidebar">
       <div className="logo">
-        {/* Plain <img>: next/image optimizer rejects this PNG ("received null"). */}
-        <img src="/betindialogo.png" alt="BetIndia" className="logo-img" />
-        <div className="logo-console">Operations Console</div>
+        <div className="product-mark">CI</div>
+        <div><div className="product-name">Customer Intelligence</div><div className="logo-console">Company Growth</div></div>
       </div>
 
-      <div className="nav-section-label">Workspace</div>
       <nav className="nav">
-        {NAV.map((item) => {
-          const active = item.href === '/' ? pathname === '/' : pathname.startsWith(item.href);
-          const Icon = item.icon;
-          return (
-            <Link key={item.label} href={item.href} className={`nav-item${active ? ' active' : ''}`}>
+        {NAV.map((group) => <div className="nav-group" key={group.label}>
+          <div className="nav-section-label">{group.label}</div>
+          {group.items.map((item) => {
+            const active = item.href === '/' ? pathname === '/' : pathname.startsWith(item.href);
+            const Icon = item.icon;
+            return <Link key={item.label} href={item.href} className={`nav-item${active ? ' active' : ''}`}>
               <span className="nav-icon"><Icon size={18} strokeWidth={1.8} /></span>
               <span className="nav-label">{item.label}</span>
-            </Link>
-          );
-        })}
+            </Link>;
+          })}
+        </div>)}
       </nav>
 
       {quickStats.length > 0 ? (
@@ -64,6 +84,7 @@ export function Sidebar({
           ))}
         </div>
       ) : null}
+      <Link href="/saas" className="company-switch"><Building2 size={17} /><span><b>Company</b><small>Switch workspace</small></span></Link>
     </aside>
   );
 }

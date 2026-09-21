@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { sendDormantWinback, campaignConfigured } from '@/lib/campaign-sender';
+import { sendDormantWinback, winbackConfigured } from '@/lib/campaign-sender';
 import { isCampaignsEnabled } from '@/lib/settings';
 
 export const dynamic = 'force-dynamic';
@@ -17,8 +17,8 @@ export async function GET(req: Request) {
   if (!(await isCampaignsEnabled())) {
     return NextResponse.json({ ran: false, reason: 'campaigns disabled from dashboard' });
   }
-  if (!campaignConfigured()) {
-    return NextResponse.json({ ran: false, reason: 'INTERAKT_CAMPAIGN_API_KEY not set' });
+  if (!(await winbackConfigured())) {
+    return NextResponse.json({ ran: false, reason: 'no winback key (set the retention account or INTERAKT_CAMPAIGN_API_KEY)' });
   }
 
   const cap = Number(process.env.CAMPAIGN_WINBACK_DAILY) || 200;

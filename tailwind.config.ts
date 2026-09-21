@@ -1,4 +1,5 @@
 import type { Config } from 'tailwindcss';
+import tailwindcssAnimate from 'tailwindcss-animate';
 
 // Tailwind is scoped for shadcn/ui on the analytics page. `preflight` is OFF so
 // the existing hand-CSS pages are untouched, and all theme tokens use a `--sc-`
@@ -38,5 +39,5 @@ export default {
       },
     },
   },
-  plugins: [require('tailwindcss-animate')],
+  plugins: [tailwindcssAnimate],
 } satisfies Config;

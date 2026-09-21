@@ -13,13 +13,13 @@ export function interaktConfigured(): boolean {
   return Boolean(API_KEY && API_KEY !== PLACEHOLDER);
 }
 
-async function interaktFetch(path: string, body: unknown): Promise<Response> {
+async function interaktFetch(path: string, body: unknown, apiKey = API_KEY): Promise<Response> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 12_000);
   try {
     return await fetch(`${BASE}${path}`, {
       method: 'POST',
-      headers: { Authorization: `Basic ${API_KEY}`, 'Content-Type': 'application/json' },
+      headers: { Authorization: `Basic ${apiKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
       cache: 'no-store',
       signal: controller.signal,
@@ -37,9 +37,9 @@ export type SendTemplateInput = {
   bodyValues?: string[]; // fills {{1}}, {{2}} ... placeholders in the template
 };
 
-/** Send a WhatsApp template message to one user. */
-export async function sendWhatsAppTemplate(input: SendTemplateInput): Promise<{ ok: boolean; id?: string; error?: string }> {
-  if (!interaktConfigured()) return { ok: false, error: 'Interakt not configured' };
+/** Send a WhatsApp template message to one user. Pass a per-company key, else the env key. */
+export async function sendWhatsAppTemplate(input: SendTemplateInput, apiKey = API_KEY): Promise<{ ok: boolean; id?: string; error?: string }> {
+  if (!apiKey || apiKey === PLACEHOLDER) return { ok: false, error: 'Interakt not configured' };
 
   const res = await interaktFetch('/message/', {
     countryCode: input.countryCode ?? '+91',
@@ -50,7 +50,7 @@ export async function sendWhatsAppTemplate(input: SendTemplateInput): Promise<{ 
       languageCode: input.languageCode ?? 'en',
       bodyValues: input.bodyValues ?? [],
     },
-  });
+  }, apiKey);
 
   const json = await res.json().catch(() => ({}));
   if (!res.ok || json?.result === false) {

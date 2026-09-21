@@ -10,21 +10,22 @@ import { createHash } from 'node:crypto';
 //   {{5}} transactionId  {{6}} date  {{7}} time
 // The REJECTED templates take one extra variable: {{8}} reason.
 // ============================================================================
-const TEMPLATES = {
-  deposit: {
-    approved: 'deposit_approved',
-    pending: 'deposit_request_received_dk',
-    rejected: 'deposit_rejected',
-  },
-  withdrawal: {
-    approved: 'withdrawal_approved',
-    pending: 'withdrawal_request_received',
-    rejected: 'withdrawal_rejected',
-  },
-} as const;
+// The transaction automation looks up templates by `${type}_${outcome}`. Values are
+// the EXACT names approved on Interakt. These 6 are the defaults for the 'updates'
+// account; other accounts define their own names.
+export const TEMPLATES: TransactionTemplates = {
+  deposit_approved: 'deposit_approved',
+  deposit_pending: 'deposit_request_received_dk',
+  deposit_rejected: 'deposit_rejected',
+  withdrawal_approved: 'withdrawal_approved',
+  withdrawal_pending: 'withdrawal_request_received',
+  withdrawal_rejected: 'withdrawal_rejected',
+};
 
-export type TransactionAutomationType = keyof typeof TEMPLATES;
+export type TransactionAutomationType = 'deposit' | 'withdrawal';
 type Outcome = 'approved' | 'pending' | 'rejected';
+// Flat map: logical name -> approved Interakt template name.
+export type TransactionTemplates = Record<string, string>;
 
 const IST_DATE_FMT = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' });
 const IST_TIME_FMT = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true });
@@ -105,7 +106,8 @@ export function automationEventKey(
 
 export function buildAutomationMessage(
   type: TransactionAutomationType,
-  body: Record<string, unknown>
+  body: Record<string, unknown>,
+  templates: TransactionTemplates = TEMPLATES
 ): AutomationMessage | null {
   const mobileRaw = pick(body, 'mobile_number', 'Mobile_number');
   const phone = mobileRaw ? normalizePhone(mobileRaw) : null;
@@ -119,7 +121,7 @@ export function buildAutomationMessage(
   const remarks = pick(body, 'remarks', 'Remarks');
 
   const outcome = classifyOutcome(transactionStatus);
-  const templateName = TEMPLATES[type][outcome];
+  const templateName = templates[`${type}_${outcome}`] || TEMPLATES[`${type}_${outcome}`];
   const now = new Date();
   // Every template shares these 7 vars; rejected adds an 8th (reason).
   const base = [
@@ -161,13 +163,15 @@ export type SkippedDescriptor = {
 export function describeSkippedMessage(
   type: TransactionAutomationType,
   body: Record<string, unknown>,
-  reason: string
+  reason: string,
+  templates: TransactionTemplates = TEMPLATES
 ): SkippedDescriptor {
   const mobile = pick(body, 'mobile_number', 'Mobile_number');
   const userId = pick(body, 'user_id', 'User_id');
   const transactionId = pick(body, 'Transaction_id', 'transaction_id');
   const transactionStatus = pick(body, 'payment_status', 'Payment_status');
-  const templateName = TEMPLATES[type][classifyOutcome(transactionStatus)];
+  const outcome = classifyOutcome(transactionStatus);
+  const templateName = templates[`${type}_${outcome}`] || TEMPLATES[`${type}_${outcome}`];
   return {
     type,
     templateName,

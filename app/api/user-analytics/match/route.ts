@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { matchUserIds } from '@/lib/user-analytics';
+import { getRequestTenantId } from '@/lib/tenant-server';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -12,7 +13,8 @@ export async function POST(req: Request) {
     if (!ids.length) {
       return NextResponse.json({ error: 'No user IDs provided.' }, { status: 400 });
     }
-    const result = await matchUserIds(ids);
+    const tenantId = await getRequestTenantId();
+    const result = await matchUserIds(tenantId, ids);
     return NextResponse.json({ configured: true, ...result });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

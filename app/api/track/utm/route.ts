@@ -5,6 +5,13 @@ export const dynamic = 'force-dynamic';
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
+type Attribution = {
+  utm?: Record<string, unknown>;
+  landing?: unknown;
+  referrer?: unknown;
+  at?: unknown;
+};
+
 // Called cross-origin from the website, so allow CORS.
 const CORS: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
@@ -45,8 +52,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true }, { headers: CORS });
   }
 
-  const first = (body.first && typeof body.first === 'object') ? body.first as Record<string, any> : null;
-  const last = (body.last && typeof body.last === 'object') ? body.last as Record<string, any> : null;
+  const first = (body.first && typeof body.first === 'object') ? body.first as Attribution : null;
+  const last = (body.last && typeof body.last === 'object') ? body.last as Attribution : null;
 
   // Only include first_*/last_* when present, so a later beacon can't null them out.
   const row: Record<string, unknown> = { device_id: deviceId };

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { fetchUserTransactions } from '@/lib/user-analytics';
+import { getRequestTenantId } from '@/lib/tenant-server';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -9,7 +10,8 @@ export async function GET(req: Request) {
   try {
     const userId = new URL(req.url).searchParams.get('userId');
     if (!userId) return NextResponse.json({ error: 'userId is required.' }, { status: 400 });
-    const transactions = await fetchUserTransactions(userId);
+    const tenantId = await getRequestTenantId();
+    const transactions = await fetchUserTransactions(tenantId, userId);
     return NextResponse.json({ configured: true, userId, transactions });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

@@ -1,6 +1,7 @@
 
 
 import { fetchKnownTransactionUserIds } from './wati';
+import { getCurrentTenantId } from './tenant';
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -85,7 +86,7 @@ async function upsertPlayerActivity(url: string, row: PlayerActivityRow): Promis
   const res = await fetch(`${url}/rest/v1/player_activity?on_conflict=user_id`, {
     method: 'POST',
     headers: headers({ 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' }),
-    body: JSON.stringify({ ...row, updated_at: new Date().toISOString() }),
+    body: JSON.stringify({ ...row, tenant_id: getCurrentTenantId(), updated_at: new Date().toISOString() }),
   });
   if (!res.ok) throw new Error(`player_activity upsert failed ${res.status}: ${(await res.text()).slice(0, 200)}`);
 }

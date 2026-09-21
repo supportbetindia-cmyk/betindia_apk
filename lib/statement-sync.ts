@@ -121,7 +121,7 @@ async function syncUser(userId: string): Promise<{ savedWithdrawals: number; upd
       statementDate: entry.date,
       createdAt: new Date(parsedDate).toISOString(),
       entry,
-    });``
+    });
     savedWithdrawals++;
   }
 

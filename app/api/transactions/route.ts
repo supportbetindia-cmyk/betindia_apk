@@ -6,6 +6,7 @@ import {
 } from '@/lib/statement';
 import { syncNextStatementBatch, type StatementSyncResult } from '@/lib/statement-sync';
 import { fetchTransactions } from '@/lib/wati';
+import { getRequestTenantId } from '@/lib/tenant-server';
 import {
   filterTransactionRows,
   parseTransactionRange,
@@ -51,7 +52,8 @@ export async function GET(req: Request) {
       syncError = err instanceof Error ? err.message : String(err);
     }
 
-    const storedRows = await fetchTransactions(2_000);
+    const tenantId = await getRequestTenantId();
+    const storedRows = await fetchTransactions(2_000, tenantId);
     const fallback = sync ? null : await reconcileTransactions(storedRows);
     const allRows = sync ? reconcileStoredTransactions(storedRows) : fallback!.rows;
     const rows = filterTransactionRows(allRows, rangeKey, new Date(range.to).getTime());

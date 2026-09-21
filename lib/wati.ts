@@ -1,6 +1,8 @@
 // Server-side helpers for the WATI deposit/withdrawal webhook. Writes with the
 // service_role key, so import only from route handlers (never a client file).
 
+import { getCurrentTenantId } from './tenant';
+
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -99,6 +101,7 @@ export async function saveTransaction(type: TxnType, body: Record<string, unknow
     image: pick(body, 'image', 'Image'),
     remarks: pick(body, 'remarks', 'Remarks'),
     raw: body,
+    tenant_id: getCurrentTenantId(),
     updated_at: new Date().toISOString(),
   };
 
@@ -149,6 +152,7 @@ export async function logWebhookHit(entry: {
         status: entry.status,
         ip: entry.ip ?? null,
         raw: entry.raw ?? null,
+        tenant_id: getCurrentTenantId(),
       }),
     });
   } catch {
@@ -174,10 +178,10 @@ export async function fetchWebhookLogs(limit = 50): Promise<Record<string, unkno
   return (await res.json()) as Record<string, unknown>[];
 }
 
-/** Read recent transactions for the dashboard (service_role). */
-export async function fetchTransactions(limit = 200): Promise<TransactionRow[]> {
+/** Read recent transactions for the dashboard (service_role), scoped to a tenant. */
+export async function fetchTransactions(limit = 200, tenantId: string = getCurrentTenantId()): Promise<TransactionRow[]> {
   if (!SUPABASE_URL || !SERVICE_ROLE) throw new Error('Supabase not configured');
-  const url = `${SUPABASE_URL}/rest/v1/transactions?select=*&order=created_at.desc&limit=${limit}`;
+  const url = `${SUPABASE_URL}/rest/v1/transactions?select=*&tenant_id=eq.${encodeURIComponent(tenantId)}&order=created_at.desc&limit=${limit}`;
   const res = await fetch(url, {
     headers: supabaseHeaders(),
     cache: 'no-store',

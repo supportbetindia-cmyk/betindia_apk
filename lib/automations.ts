@@ -1,4 +1,6 @@
 import { sendWhatsAppTemplate } from './interakt';
+import { getTenantWhatsApp } from './whatsapp-settings';
+import { getCurrentTenantId } from './tenant';
 import { isAutomationEnabled, isDepositFinalOnly, getCronLastRun } from './settings';
 import {
   buildAutomationMessage,
@@ -42,17 +44,14 @@ function requireSupabase(): { url: string; key: string } {
 }
 
 
-/** A deposit is still "pending" (not a final approve/reject). We hold the WhatsApp
- * until the Transaction Update webhook delivers the final status, so a player gets
- * ONE clean message instead of "received" + "approved". Empty status = still pending. */
+
 function isPendingDepositStatus(status: string): boolean {
   const s = (status || '').trim().toLowerCase();
   if (!s) return true;
   return /pending|process|initiat|await|hold|request|create|new/.test(s);
 }
 
-/** Insert one message_log row, ignoring duplicates on event_key. Returns whether
- * a new row was created (false = duplicate webhook) and the new row's id. */
+
 async function insertMessageRow(url: string, row: Record<string, unknown>): Promise<{ inserted: boolean; id: number | null }> {
   const response = await fetch(`${url}/rest/v1/message_log?on_conflict=event_key`, {
     method: 'POST',
@@ -60,7 +59,7 @@ async function insertMessageRow(url: string, row: Record<string, unknown>): Prom
       'Content-Type': 'application/json',
       Prefer: 'resolution=ignore-duplicates,return=representation',
     }),
-    body: JSON.stringify(row),
+    body: JSON.stringify({ tenant_id: getCurrentTenantId(), ...row }),
   });
   if (!response.ok) {
     throw new Error(`Automation queue insert failed ${response.status}: ${(await response.text()).slice(0, 200)}`);
@@ -69,12 +68,7 @@ async function insertMessageRow(url: string, row: Record<string, unknown>): Prom
   return { inserted: rows.length > 0, id: rows[0]?.id ?? null };
 }
 
-/** Send ONE message immediately (from the webhook), so a player gets their
- * WhatsApp within a second instead of waiting up to a cron cycle. It first
- * atomically claims the row (queued -> processing) so the cron can't also grab
- * it — whoever flips the status wins, preventing a double send. Any failure just
- * leaves the row for the cron to retry with backoff. */
-async function deliverNow(url: string, id: number, message: AutomationMessage): Promise<void> {
+async function deliverNow(url: string, id: number, message: AutomationMessage, apiKey?: string): Promise<void> {
   const claim = await fetch(`${url}/rest/v1/message_log?id=eq.${id}&status=eq.queued`, {
     method: 'PATCH',
     headers: supabaseHeaders({ 'Content-Type': 'application/json', Prefer: 'return=representation' }),
@@ -97,7 +91,7 @@ async function deliverNow(url: string, id: number, message: AutomationMessage): 
       templateName: message.templateName,
       languageCode: 'en',
       bodyValues: message.bodyValues,
-    });
+    }, apiKey);
   } catch (err) {
     result = { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
@@ -112,7 +106,7 @@ async function deliverNow(url: string, id: number, message: AutomationMessage): 
       last_error: null,
     });
   } else {
-    // Hand it back to the cron for retry with backoff.
+    
     await updateMessage(id, {
       status: 'failed',
       detail: 'Instant send failed — cron will retry',
@@ -123,18 +117,19 @@ async function deliverNow(url: string, id: number, message: AutomationMessage): 
   }
 }
 
-/** Persist an automation event before acknowledging the payment webhook. A
- * transaction that can't be messaged (e.g. no valid phone) is still recorded as
- * "skipped" so a dropped message is never invisible. */
 export async function queueTransactionAutomation(
   type: TransactionAutomationType,
-  body: Record<string, unknown>
+  body: Record<string, unknown>,
+  source:"webhook"|"import" = "webhook"
+
 ): Promise<{ accepted: boolean; duplicate: boolean; skipped: boolean }> {
+  if(source !="webhook") return {accepted: false, duplicate: false, skipped: true}
   const { url } = requireSupabase();
-  const message = buildAutomationMessage(type, body);
+  const wa = await getTenantWhatsApp();
+  const message = buildAutomationMessage(type, body, wa.templates);
 
   if (!message) {
-    const skip = describeSkippedMessage(type, body, 'no_valid_phone');
+    const skip = describeSkippedMessage(type, body, 'no_valid_phone', wa.templates);
     await insertMessageRow(url, {
       event_key: skip.eventKey,
       channel: 'whatsapp',
@@ -152,8 +147,7 @@ export async function queueTransactionAutomation(
   }
 
   const enabled = await isAutomationEnabled(type);
-  // Only hold pending deposits when the operator has opted in (and the update
-  // webhook is live). OFF by default so deposits always send.
+  
   const holdForFinal = type === 'deposit'
     && (await isDepositFinalOnly())
     && isPendingDepositStatus(message.transactionStatus);
@@ -183,7 +177,7 @@ export async function queueTransactionAutomation(
   // Fire-and-forget so the webhook still returns immediately; the cron is the
   // safety net (a stuck 'processing' row is reclaimed after its lock expires).
   if (willSend && inserted && id != null) {
-    void deliverNow(url, id, message).catch((err) => {
+    void deliverNow(url, id, message, wa.apiKey).catch((err) => {
       console.error('[automation] instant send failed:', err);
     });
   }
@@ -240,6 +234,9 @@ export async function processAutomationQueue(options: {
   const rows = await claimMessages(options.limit ?? 10, maxAttempts);
   let sent = 0;
   let failed = 0;
+  // ponytail: single tenant today, so one key for the batch. When webhooks become
+  // tenant-routed, resolve getTenantWhatsApp(row.tenant_id) per row instead.
+  const { apiKey } = await getTenantWhatsApp();
 
   for (const row of rows) {
     let result: Awaited<ReturnType<typeof sendWhatsAppTemplate>>;
@@ -250,7 +247,7 @@ export async function processAutomationQueue(options: {
         templateName: row.template,
         languageCode: 'en',
         bodyValues: bodyValuesFrom(row),
-      });
+      }, apiKey);
     } catch (err) {
       result = { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
