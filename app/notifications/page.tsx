@@ -1,4 +1,5 @@
 'use client';
+import { logout } from '@/lib/logout';
 
 import { useCallback } from 'react';
 import { useRouter } from 'next/navigation';
@@ -10,8 +11,7 @@ export default function NotificationsPage() {
   const router = useRouter();
 
   const logout = useCallback(async () => {
-    await fetch('/api/logout', { method: 'POST' });
-    router.replace('/login');
+    await logout();
     router.refresh();
   }, [router]);
 

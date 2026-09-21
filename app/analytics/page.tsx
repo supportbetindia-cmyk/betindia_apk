@@ -1,4 +1,5 @@
 'use client';
+import { logout } from '@/lib/logout';
 
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -179,8 +180,7 @@ export default function AnalyticsPage() {
   );
 
   const logout = useCallback(async () => {
-    await fetch('/api/logout', { method: 'POST' });
-    router.replace('/login');
+    await logout();
     router.refresh();
   }, [router]);
 

@@ -1,4 +1,5 @@
 'use client';
+import { logout } from '@/lib/logout';
 
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
@@ -71,8 +72,7 @@ export default function Dashboard() {
   const [range, setRange] = useState<DateRangeKey>('7d');
 
   const logout = useCallback(async () => {
-    await fetch('/api/logout', { method: 'POST' });
-    router.replace('/login');
+    await logout();
     router.refresh();
   }, [router]);
 
