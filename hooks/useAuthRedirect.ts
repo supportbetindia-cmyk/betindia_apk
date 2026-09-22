@@ -11,3 +11,4 @@ export function useAuthRedirect(error: unknown): void {
     if (error instanceof BackendApiError && error.status === 401) router.replace('/saas-login');
   }, [error, router]);
 }
+  
