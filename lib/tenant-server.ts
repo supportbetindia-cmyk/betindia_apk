@@ -21,18 +21,24 @@ export async function getRequestTenantId(): Promise<string> {
     const { data } = await supabase.auth.getUser();
     if (!data.user) return DEFAULT_TENANT_ID; // password-login user → BetIndia
 
+    // All the companies this user actually belongs to.
     const params = new URLSearchParams({
       select: 'tenant_id',
       auth_user_id: `eq.${data.user.id}`,
       status: 'eq.active',
-      limit: '1',
     });
     const res = await fetch(`${SUPABASE_URL}/rest/v1/tenant_memberships?${params.toString()}`, {
       headers: { apikey: SERVICE_ROLE ?? '', Authorization: `Bearer ${SERVICE_ROLE}` },
       cache: 'no-store',
     });
-    const rows = res.ok ? ((await res.json()) as Array<{ tenant_id: string }>) : [];
-    return rows[0]?.tenant_id || DEFAULT_TENANT_ID;
+    const memberships = res.ok ? ((await res.json()) as Array<{ tenant_id: string }>) : [];
+    if (!memberships.length) return DEFAULT_TENANT_ID;
+
+    // Honor the company the user picked (cookie set by setSelectedTenantId), but only
+    // if they're really a member of it — so editing the cookie can't leak another tenant.
+    const selected = cookieStore.get('ci_selected_tenant_id')?.value;
+    if (selected && memberships.some((m) => m.tenant_id === selected)) return selected;
+    return memberships[0].tenant_id;
   } catch {
     return DEFAULT_TENANT_ID;
   }

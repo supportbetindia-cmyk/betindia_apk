@@ -40,10 +40,15 @@ export function getSelectedTenantId(): string | null {
 
 export function setSelectedTenantId(tenantId: string): void {
   window.localStorage.setItem(TENANT_STORAGE_KEY, tenantId);
+  // Mirror to a cookie so server-side legacy API routes know the active company.
+  // (localStorage is client-only; the cookie is what getRequestTenantId reads.)
+  document.cookie = `${TENANT_STORAGE_KEY}=${tenantId}; path=/; max-age=31536000; samesite=lax`;
 }
 
 export function clearSelectedTenantId(): void {
-  if (typeof window !== 'undefined') window.localStorage.removeItem(TENANT_STORAGE_KEY);
+  if (typeof window === 'undefined') return;
+  window.localStorage.removeItem(TENANT_STORAGE_KEY);
+  document.cookie = `${TENANT_STORAGE_KEY}=; path=/; max-age=0; samesite=lax`;
 }
 
 export async function backendRequest<T>(
