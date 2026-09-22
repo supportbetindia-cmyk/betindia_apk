@@ -2,6 +2,7 @@
 // 'updates' for deposit/withdrawal automation. Import only from route handlers.
 
 import { getCurrentTenantId } from './tenant';
+import { sendWhatsAppTemplate } from './interakt';
 import { TEMPLATES, type TransactionTemplates } from './automation-message';
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -13,6 +14,9 @@ export type WhatsAppSettings = { apiKey: string | undefined; templates: Transact
 export type WhatsAppAccount = {
   role: string; label: string; enabled: boolean;
   hasKey: boolean; maskedKey: string; templates: TransactionTemplates;
+  // Whether this account resolves to a real key right now (own key, or the env
+  // default for 'updates') — i.e. whether it would actually send.
+  activeKey: boolean;
 };
 
 function headers(extra: Record<string, string> = {}) {
@@ -55,10 +59,27 @@ export async function listTenantWhatsApp(tenantId: string = getCurrentTenantId()
   );
   const rows: Array<{ role: string; label: string | null; api_key: string | null; templates: Partial<TransactionTemplates>; enabled: boolean }> =
     res.ok ? await res.json() : [];
+  const envKey = Boolean(process.env.INTERAKT_API_KEY);
   return rows.map((r) => ({
     role: r.role, label: r.label ?? r.role, enabled: r.enabled,
     hasKey: Boolean(r.api_key), maskedKey: mask(r.api_key), templates: mergeTemplates(r.templates, r.role),
+    activeKey: Boolean(r.api_key) || (r.role === UPDATES_ROLE && envKey),
   }));
+}
+
+/** Send a real template message to a number, to prove the account's key works. */
+export async function sendTestMessage(role: string, phone: string): Promise<{ ok: boolean; error?: string }> {
+  const wa = await getTenantWhatsApp(role);
+  if (!wa.apiKey) return { ok: false, error: 'No API key set for this account' };
+  const templateName = Object.values(wa.templates)[0];
+  if (!templateName) return { ok: false, error: 'Add at least one template first' };
+  return sendWhatsAppTemplate({
+    phoneNumber: phone.replace(/\D/g, '').slice(-10),
+    countryCode: '+91',
+    templateName,
+    // Generous placeholder set so any 1–8 variable template fills in.
+    bodyValues: ['Test', 'TEST123', '100', 'INR', 'TXN123', new Date().toLocaleDateString('en-IN'), '12:00 PM', 'test'],
+  }, wa.apiKey);
 }
 
 /** Create or update one account (by role). Send apiKey only when changing it. */

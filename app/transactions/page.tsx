@@ -109,8 +109,8 @@ export default function TransactionsPage() {
   console.log("transaction data", data);
 
   const logout = useCallback(async () => {
-    await logout();
-    router.refresh();
+     console.log('trigger')
+
   }, [router]);
 
   const s = data?.summary;

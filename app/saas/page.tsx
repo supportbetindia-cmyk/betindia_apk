@@ -25,6 +25,7 @@ export default function SaasHome() {
   const [companyName, setCompanyName] = useState('');
   const [creatingCompany, setCreatingCompany] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false); // show the create form for an existing user
 
   useEffect(() => {
     (async () => {
@@ -57,7 +58,7 @@ export default function SaasHome() {
       : current);
   }
 
-  async function createFirstCompany(event: React.FormEvent) {
+  async function createCompany(event: React.FormEvent) {
     event.preventDefault();
     const name = companyName.trim();
     if (!name || state.status !== 'ready') return;
@@ -73,6 +74,7 @@ export default function SaasHome() {
       setSelectedTenantId(tenant.id);
       setState({ status: 'ready', me, selectedTenantId: tenant.id });
       setCompanyName('');
+      setAdding(false);
     } catch (err) {
       setCreateError(err instanceof Error ? err.message : 'Could not create the company');
     } finally {
@@ -95,7 +97,7 @@ export default function SaasHome() {
 
         {state.status === 'ready' ? <>
           <div className="workspace-account"><span>Signed in as</span><b>{state.me.user.email}</b></div>
-          {state.me.tenants.length ? <div className="workspace-grid">
+          {state.me.tenants.length && !adding ? <div className="workspace-grid">
             {state.me.tenants.map((tenant) => {
               const selected = state.selectedTenantId === tenant.id;
               return <button key={tenant.id} type="button" className={`workspace-card${selected ? ' selected' : ''}`} onClick={() => selectTenant(tenant)}>
@@ -104,13 +106,20 @@ export default function SaasHome() {
                 <span className="workspace-check">{selected ? <Check size={16} /> : null}</span>
               </button>;
             })}
-          </div> : <form className="workspace-create" onSubmit={createFirstCompany}>
+            <button type="button" className="workspace-card workspace-card-add" onClick={() => { setCreateError(null); setAdding(true); }}>
+              <span className="workspace-company-icon"><Plus size={22} /></span>
+              <span className="workspace-company"><b>New company</b><small>create</small></span>
+            </button>
+          </div> : <form className="workspace-create" onSubmit={createCompany}>
             <span className="workspace-company-icon"><Plus size={22} /></span>
-            <div><h2>Create your first company</h2><p>You will be assigned as the company owner.</p></div>
+            <div><h2>{state.me.tenants.length ? 'New company' : 'Create your first company'}</h2><p>You will be assigned as the company owner.</p></div>
             <label htmlFor="company-name">Company name</label>
-            <input id="company-name" value={companyName} onChange={(event) => setCompanyName(event.target.value)} placeholder="Example: BetIndia" required maxLength={120} />
+            <input id="company-name" value={companyName} onChange={(event) => setCompanyName(event.target.value)} placeholder="Example: BetIndia" required maxLength={120} autoFocus />
             {createError ? <div className="workspace-error" role="alert">{createError}</div> : null}
-            <button type="submit" disabled={creatingCompany || !companyName.trim()}>{creatingCompany ? 'Creating…' : 'Create company'} <ArrowRight size={16} /></button>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button type="submit" disabled={creatingCompany || !companyName.trim()}>{creatingCompany ? 'Creating…' : 'Create company'} <ArrowRight size={16} /></button>
+              {state.me.tenants.length ? <button type="button" className="workspace-signout" onClick={() => { setAdding(false); setCompanyName(''); setCreateError(null); }}>Cancel</button> : null}
+            </div>
           </form>}
 
           {state.selectedTenantId ? <div className="workspace-actions">

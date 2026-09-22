@@ -10,7 +10,16 @@ import { Input } from '@/components/ui/input';
 type Account = {
   role: string; label: string; enabled: boolean;
   hasKey: boolean; maskedKey: string; templates: Record<string, string>;
+  activeKey: boolean;
 };
+
+// Plain badge: is this account actually going to send, and with which key?
+function statusOf(a: Account): { text: string; color: string; bg: string } {
+  if (!a.enabled) return { text: 'Off', color: '#6b7280', bg: '#f3f4f6' };
+  if (a.hasKey) return { text: 'Active · using its own key', color: '#15803d', bg: '#ecfdf3' };
+  if (a.activeKey) return { text: 'Active · using default key', color: '#b45309', bg: '#fff7ed' };
+  return { text: 'No key — won’t send', color: '#b91c1c', bg: '#fef2f2' };
+}
 type Row = { name: string; value: string; fixed: boolean };
 
 // The 6 template names the deposit/withdrawal automation looks up — locked on the
@@ -90,6 +99,25 @@ function AccountCard({ account, onSaved }: { account: Account; onSaved: (a: Acco
   const [rows, setRows] = useState<Row[]>(toRows(account));
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const [testPhone, setTestPhone] = useState('');
+  const [testing, setTesting] = useState(false);
+  const [testMsg, setTestMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const status = statusOf(account);
+
+  async function runTest() {
+    if (!testPhone.trim()) return;
+    setTesting(true); setTestMsg(null);
+    try {
+      const res = await fetch('/api/whatsapp-settings/test', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role: account.role, phone: testPhone.trim() }),
+      });
+      const d = await res.json();
+      setTestMsg(d.ok ? { ok: true, text: 'Sent — this key works ✓' } : { ok: false, text: d.error || 'Not working' });
+    } catch (e) {
+      setTestMsg({ ok: false, text: e instanceof Error ? e.message : 'Test failed' });
+    } finally { setTesting(false); }
+  }
 
   const setRow = (i: number, patch: Partial<Row>) => setRows((r) => r.map((row, j) => j === i ? { ...row, ...patch } : row));
   const addRow = () => setRows((r) => [...r, { name: '', value: '', fixed: false }]);
@@ -110,7 +138,10 @@ function AccountCard({ account, onSaved }: { account: Account; onSaved: (a: Acco
   return (
     <div className="panel">
       <div className="panel-head">
-        <h3>{account.label} <span className="page-sub" style={{ fontWeight: 400 }}>· {account.role}</span></h3>
+        <h3 style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {account.label} <span className="page-sub" style={{ fontWeight: 400 }}>· {account.role}</span>
+          <span style={{ fontSize: 12, fontWeight: 700, padding: '3px 10px', borderRadius: 999, color: status.color, background: status.bg }}>{status.text}</span>
+        </h3>
         <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 13, color: '#475569' }}>
           <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} /> Enabled
         </label>
@@ -144,6 +175,15 @@ function AccountCard({ account, onSaved }: { account: Account; onSaved: (a: Acco
           ))}
         </div>
         <Button variant="outline" onClick={addRow} style={{ marginTop: 8 }}>+ Add template</Button>
+      </div>
+
+      <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid #eef2f7' }}>
+        <div style={{ fontSize: 13, color: '#475569', marginBottom: 6 }}>Test this key — sends one real message to your number:</div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <Input value={testPhone} onChange={(e) => setTestPhone(e.target.value)} placeholder="Your phone (e.g. 9876543210)" style={{ width: 240 }} />
+          <Button variant="outline" onClick={runTest} disabled={testing || !testPhone.trim()}>{testing ? 'Sending…' : 'Send test'}</Button>
+          {testMsg ? <span style={{ color: testMsg.ok ? '#15803d' : '#b91c1c', fontSize: 13 }}>{testMsg.text}</span> : null}
+        </div>
       </div>
 
       <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginTop: 16 }}>
