@@ -101,3 +101,13 @@ export async function saveTenantWhatsApp(
   });
   if (!res.ok) throw new Error(`Could not save account (${res.status})`);
 }
+
+/** Remove one account. (The 'updates' account falls back to the env key + defaults.) */
+export async function deleteTenantWhatsApp(role: string, tenantId: string = getCurrentTenantId()): Promise<void> {
+  if (!SUPABASE_URL || !SERVICE_ROLE) throw new Error('Server is missing Supabase credentials');
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/whatsapp_settings?tenant_id=eq.${tenantId}&role=eq.${encodeURIComponent(role)}`,
+    { method: 'DELETE', headers: headers() },
+  );
+  if (!res.ok) throw new Error(`Could not remove account (${res.status})`);
+}

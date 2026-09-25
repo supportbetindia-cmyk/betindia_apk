@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { listTenantWhatsApp, saveTenantWhatsApp } from '@/lib/whatsapp-settings';
+import { deleteTenantWhatsApp, listTenantWhatsApp, saveTenantWhatsApp } from '@/lib/whatsapp-settings';
 
 // List all accounts (keys masked).
 export async function GET() {
@@ -23,5 +23,17 @@ export async function POST(req: Request) {
     return NextResponse.json({ accounts: await listTenantWhatsApp() });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : 'Save failed' }, { status: 500 });
+  }
+}
+
+// Remove one account by role.
+export async function DELETE(req: Request) {
+  const role = new URL(req.url).searchParams.get('role')?.trim();
+  if (!role) return NextResponse.json({ error: 'role is required' }, { status: 400 });
+  try {
+    await deleteTenantWhatsApp(role);
+    return NextResponse.json({ accounts: await listTenantWhatsApp() });
+  } catch (e) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : 'Delete failed' }, { status: 500 });
   }
 }
