@@ -16,6 +16,7 @@ import {
   Megaphone,
   PiggyBank,
   Settings,
+  ShieldCheck,
   Target,
   TrendingUp,
   Zap,
@@ -44,6 +45,7 @@ const NAV: Array<{ label: string; items: NavItem[] }> = [
     { icon: LineChart, label: 'Player analytics', href: '/analytics' },
   ] },
   { label: 'Configure', items: [
+    { icon: ShieldCheck, label: 'Admin', href: '/admin' },
     { icon: Building2, label: 'Departments', href: '/settings/departments' },
     { icon: UsersRound, label: 'Team', href: '/settings/team' },
     { icon: Settings, label: 'WhatsApp settings', href: '/settings/whatsapp' },
