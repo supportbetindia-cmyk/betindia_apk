@@ -8,7 +8,9 @@ import {
   Building2,
   CreditCard,
   Users,
+  UsersRound,
   LineChart,
+  FileBarChart,
   Webhook,
   MessageCircleMore,
   Megaphone,
@@ -37,10 +39,13 @@ const NAV: Array<{ label: string; items: NavItem[] }> = [
     { icon: BellRing, label: 'Push notifications', href: '/notifications' },
   ] },
   { label: 'Analyse', items: [
+    { icon: FileBarChart, label: 'Reports', href: '/reports' },
     { icon: BarChart3, label: 'Product analytics', href: '/' },
     { icon: LineChart, label: 'Player analytics', href: '/analytics' },
   ] },
   { label: 'Configure', items: [
+    { icon: Building2, label: 'Departments', href: '/settings/departments' },
+    { icon: UsersRound, label: 'Team', href: '/settings/team' },
     { icon: Settings, label: 'WhatsApp settings', href: '/settings/whatsapp' },
   ] },
 ];
@@ -59,13 +64,13 @@ export function Sidebar({
         <div><div className="product-name">Customer Intelligence</div><div className="logo-console">Company Growth</div></div>
       </div>
 
-      <nav className="nav">
+      <nav className="nav" aria-label="Main navigation">
         {NAV.map((group) => <div className="nav-group" key={group.label}>
           <div className="nav-section-label">{group.label}</div>
           {group.items.map((item) => {
             const active = item.href === '/' ? pathname === '/' : pathname.startsWith(item.href);
             const Icon = item.icon;
-            return <Link key={item.label} href={item.href} className={`nav-item${active ? ' active' : ''}`}>
+            return <Link key={item.label} href={item.href} title={item.label} aria-current={active ? 'page' : undefined} className={`nav-item${active ? ' active' : ''}`}>
               <span className="nav-icon"><Icon size={18} strokeWidth={1.8} /></span>
               <span className="nav-label">{item.label}</span>
             </Link>;

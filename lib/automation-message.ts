@@ -39,6 +39,7 @@ function classifyOutcome(status: string): Outcome {
   return 'pending';
 }
 
+
 export type AutomationMessage = {
   eventKey: string;
   type: TransactionAutomationType;

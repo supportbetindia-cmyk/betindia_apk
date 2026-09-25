@@ -92,6 +92,7 @@ export async function createNotification(input: SendInput): Promise<{ id: string
 
   const res = await authFetch(`${BASE}/notifications`, { method: 'POST', body: JSON.stringify(body) });
   const json = await res.json().catch(() => ({}));
+  console.log("await json ", res)
   if (!res.ok) {
     const errs = json?.errors ? JSON.stringify(json.errors) : `HTTP ${res.status}`;
     throw new Error(`OneSignal send failed: ${errs}`);

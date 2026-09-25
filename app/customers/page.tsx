@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { ChangeEvent, FormEvent, useRef, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { Search, Upload, Users } from 'lucide-react';
+import { Clock3, Search, Upload, Users } from 'lucide-react';
 import { Sidebar } from '@/components/Sidebar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -49,6 +49,7 @@ type CustomerList = {
   pageSize: number;
   total: number;
 };
+type ScheduleStatus = { enabled: boolean; timezone: string; atRiskDays: number; inactiveDays: number; lastRunAt: string | null };
 
 async function loadCustomers(search: string, page: number, missingReg: boolean): Promise<CustomerList> {
   const query = new URLSearchParams({ page: String(page), pageSize: '50' });
@@ -87,6 +88,11 @@ export default function CustomersPage() {
   const query = useQuery({
     queryKey: ['backend-customers', tenantId, search, page, missingReg],
     queryFn: () => loadCustomers(search, page, missingReg),
+    enabled: Boolean(tenantId),
+  });
+  const schedule = useQuery({
+    queryKey: ['classification-schedule', tenantId],
+    queryFn: () => backendRequest<ScheduleStatus>('/classification/schedule'),
     enabled: Boolean(tenantId),
   });
 
@@ -203,6 +209,7 @@ export default function CustomersPage() {
           <div>
             <h1 className="page-title">Players</h1>
             <p className="page-sub">All your players in one place. Click a name to see their money.</p>
+            {schedule.data ? <div className="classification-schedule"><Clock3 size={13} /> Automatic grouping daily · At risk after {schedule.data.atRiskDays} days · Inactive after {schedule.data.inactiveDays} days{schedule.data.lastRunAt ? ` · Last run ${new Date(schedule.data.lastRunAt).toLocaleString('en-IN')}` : ' · Waiting for first run'}</div> : null}
           </div>
           {tenantId ? (
             <div style={{ display: 'flex', gap: 8 }}>
