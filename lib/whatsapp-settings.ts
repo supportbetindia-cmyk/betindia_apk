@@ -78,7 +78,7 @@ export async function sendTestMessage(role: string, phone: string): Promise<{ ok
     countryCode: '+91',
     templateName,
     // Generous placeholder set so any 1–8 variable template fills in.
-    bodyValues: ['Test', 'TEST123', '100', 'INR', 'TXN123', new Date().toLocaleDateString('en-IN'), '12:00 PM', 'test'],
+    bodyValues: ['Test', 'TEST123', '100', 'INR', 'TXN123', new Date().toLocaleDateString('en-IN'), '12:00 PM'],
   }, wa.apiKey);
 }
 
