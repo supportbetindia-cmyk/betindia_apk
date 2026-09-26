@@ -5,6 +5,8 @@ import { Loader2 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+import { useMasterFilter } from './MasterFilterProvider';
+import { withMaster } from '@/lib/master-filter';
 
 type UserTxn = {
   id: number;
@@ -23,8 +25,8 @@ const STATUS_VARIANT: Record<UserTxn['status'], 'default' | 'destructive' | 'mut
   approved: 'default', rejected: 'destructive', pending: 'muted',
 };
 
-async function fetchUser(userId: string): Promise<UserTxn[]> {
-  const res = await fetch(`/api/user-analytics/user?userId=${encodeURIComponent(userId)}`);
+async function fetchUser(userId: string, masterId: string): Promise<UserTxn[]> {
+  const res = await fetch(withMaster(`/api/user-analytics/user?userId=${encodeURIComponent(userId)}`, masterId));
   const body = (await res.json()) as { transactions?: UserTxn[]; error?: string };
   if (!res.ok) throw new Error(body.error || 'Failed to load user');
   return body.transactions ?? [];
@@ -33,7 +35,8 @@ async function fetchUser(userId: string): Promise<UserTxn[]> {
 export function UserDetail({ userId, name, mobile, onClose }: {
   userId: string; name: string | null; mobile: string | null; onClose: () => void;
 }) {
-  const query = useQuery({ queryKey: ['user-detail', userId], queryFn: () => fetchUser(userId) });
+  const { masterId } = useMasterFilter();
+  const query = useQuery({ queryKey: ['user-detail', userId, masterId], queryFn: () => fetchUser(userId, masterId) });
   const txns = query.data ?? [];
 
   const approvedDep = txns.filter((t) => t.type === 'deposit' && t.status === 'approved');

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { activeUsers } from '@/lib/user-analytics';
-import { getRequestTenantId } from '@/lib/tenant-server';
+import { getRequestTenantId, requestErrorStatus } from '@/lib/tenant-server';
+import { parseMasterId } from '@/lib/master-filter';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -9,6 +10,7 @@ export const maxDuration = 60;
 export async function GET(req: Request) {
   try {
     const url = new URL(req.url);
+    const masterId = parseMasterId(url.searchParams);
     const from = url.searchParams.get('from');
     const to = url.searchParams.get('to');
     if (!from || !to) {
@@ -18,11 +20,11 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: 'Invalid from/to timestamp.' }, { status: 400 });
     }
     const tenantId = await getRequestTenantId();
-    const { total, series } = await activeUsers(tenantId, from, to);
+    const { total, series } = await activeUsers(tenantId, from, to, masterId);
     return NextResponse.json({ configured: true, count: total, series, from, to });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     const needsSetup = /does not exist|42P01|PGRST205|Could not find the table|failed 404|not configured/i.test(message);
-    return NextResponse.json({ configured: !needsSetup, error: message }, { status: needsSetup ? 200 : 500 });
+    return NextResponse.json({ configured: !needsSetup, error: message }, { status: needsSetup ? 200 : requestErrorStatus(err) });
   }
 }

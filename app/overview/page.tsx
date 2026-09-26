@@ -4,10 +4,11 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowDownRight, ArrowUpRight, Minus, X } from 'lucide-react';
 import { Sidebar } from '@/components/Sidebar';
+import { useMasterFilter } from '@/components/MasterFilterProvider';
 import { PeriodTabs } from '@/components/saas/PeriodTabs';
 import { useAuthRedirect } from '@/hooks/useAuthRedirect';
 import { money, count } from '@/lib/format';
-import { backendRequest, getSelectedTenantId } from '@/lib/backend-api';
+import { backendRequest } from '@/lib/backend-api';
 
 type Growth = {
   current: number; previous: number;
@@ -39,20 +40,20 @@ const PERIODS = [
 ];
 
 export default function CompanyOverviewPage() {
-  const tenantId = getSelectedTenantId();
+  const { tenantId, masterId, scopedHref } = useMasterFilter();
   const [period, setPeriod] = useState('month');
   const [detail, setDetail] = useState<{ metric: string; title: string } | null>(null);
 
   const query = useQuery({
-    queryKey: ['backend-overview', tenantId, period],
-    queryFn: () => backendRequest<Overview>(`/dashboard?period=${period}`),
+    queryKey: ['backend-overview', tenantId, period, masterId],
+    queryFn: ({ signal }) => backendRequest<Overview>(scopedHref(`/dashboard?period=${period}`), { tenantId, signal }),
     enabled: Boolean(tenantId),
   });
   useAuthRedirect(query.error);
 
   const detailsQuery = useQuery({
-    queryKey: ['overview-details', tenantId, period, detail?.metric],
-    queryFn: () => backendRequest<Detail>(`/dashboard/details?period=${period}&metric=${detail!.metric}`),
+    queryKey: ['overview-details', tenantId, period, detail?.metric, masterId],
+    queryFn: ({ signal }) => backendRequest<Detail>(scopedHref(`/dashboard/details?period=${period}&metric=${detail!.metric}`), { tenantId, signal }),
     enabled: Boolean(tenantId && detail),
   });
 

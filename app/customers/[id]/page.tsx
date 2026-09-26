@@ -5,10 +5,12 @@ import { useParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowLeft, ArrowDownCircle, ArrowUpCircle, Gift, Wallet } from 'lucide-react';
 import { Sidebar } from '@/components/Sidebar';
+import { useMasterFilter } from '@/components/MasterFilterProvider';
+import { withMaster } from '@/lib/master-filter';
 import { Badge } from '@/components/ui/badge';
 import { useAuthRedirect } from '@/hooks/useAuthRedirect';
 import { money as inr, day as fmtDay } from '@/lib/format';
-import { backendRequest, getSelectedTenantId } from '@/lib/backend-api';
+import { backendRequest } from '@/lib/backend-api';
 
 type ClassificationEvent = {
   id: string; dimension: string; oldValue: string | null; newValue: string | null; reason: string | null; changedAt: string;
@@ -63,15 +65,15 @@ const stageWord = (v: string | null) => (v ? STAGE_WORDS[v] ?? v : '—');
 
 export default function Customer360Page() {
   const params = useParams<{ id: string }>();
-  const tenantId = getSelectedTenantId();
+  const { tenantId, masterId, scopedHref } = useMasterFilter();
   const customerQuery = useQuery({
-    queryKey: ['backend-customer-360', tenantId, params.id],
-    queryFn: () => backendRequest<Customer360>(`/customers/${params.id}`),
+    queryKey: ['backend-customer-360', tenantId, params.id, masterId],
+    queryFn: ({ signal }) => backendRequest<Customer360>(scopedHref(`/customers/${params.id}`), { tenantId, signal }),
     enabled: Boolean(tenantId && params.id),
   });
   const transactionsQuery = useQuery({
-    queryKey: ['backend-customer-transactions', tenantId, params.id],
-    queryFn: () => backendRequest<TransactionList>(`/customers/${params.id}/transactions?page=1&pageSize=100`),
+    queryKey: ['backend-customer-transactions', tenantId, params.id, masterId],
+    queryFn: ({ signal }) => backendRequest<TransactionList>(withMaster(`/customers/${params.id}/transactions?page=1&pageSize=100`, masterId), { tenantId, signal }),
     enabled: Boolean(tenantId && params.id),
   });
   const data = customerQuery.data;
@@ -91,7 +93,7 @@ export default function Customer360Page() {
       <main className="main">
         <header className="topbar2">
           <div>
-            <Link href="/customers" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: '#64748b', fontSize: 13, marginBottom: 8 }}><ArrowLeft size={14} /> Back to all players</Link>
+            <Link href={scopedHref('/customers')} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: '#64748b', fontSize: 13, marginBottom: 8 }}><ArrowLeft size={14} /> Back to all players</Link>
             <h1 className="page-title">{data?.customer.name || 'Player details'}</h1>
             <p className="page-sub">A simple summary of this player&apos;s money</p>
           </div>

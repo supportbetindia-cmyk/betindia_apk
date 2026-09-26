@@ -9,20 +9,23 @@ import { Input } from '@/components/ui/input';
 import { COMPARE_PRESETS, resolveComparison, type ComparePreset } from '@/lib/ui-range';
 import type { GrowthMetric, GrowthResult } from '@/lib/growth';
 import { cn } from '@/lib/utils';
+import { useMasterFilter } from './MasterFilterProvider';
+import { withMaster } from '@/lib/master-filter';
 
 const money = (n: number) => `₹${Math.round(n).toLocaleString('en-IN')}`;
 const fmt = (m: GrowthMetric) => (m.format === 'money' ? money(m.current) : m.current.toLocaleString('en-IN'));
 const fmtPrev = (m: GrowthMetric) => (m.format === 'money' ? money(m.previous) : m.previous.toLocaleString('en-IN'));
 
-async function fetchGrowth(c: NonNullable<ReturnType<typeof resolveComparison>>, label: string): Promise<GrowthResult> {
+async function fetchGrowth(c: NonNullable<ReturnType<typeof resolveComparison>>, label: string, masterId: string): Promise<GrowthResult> {
   const q = new URLSearchParams({ from: c.current.from, to: c.current.to, prevFrom: c.previous.from, prevTo: c.previous.to, label });
-  const res = await fetch(`/api/user-analytics/growth?${q.toString()}`, { cache: 'no-store' });
+  const res = await fetch(withMaster(`/api/user-analytics/growth?${q.toString()}`, masterId), { cache: 'no-store' });
   const body = (await res.json()) as GrowthResult & { error?: string };
   if (!res.ok) throw new Error(body.error || 'Failed to load growth');
   return body;
 }
 
 export function GrowthPanel() {
+  const { masterId } = useMasterFilter();
   const today = new Date().toISOString().slice(0, 10);
   const [preset, setPreset] = useState<ComparePreset>('month');
   const [from, setFrom] = useState(today);
@@ -31,8 +34,8 @@ export function GrowthPanel() {
   const cmp = useMemo(() => resolveComparison(preset, from, to), [preset, from, to]);
 
   const query = useQuery({
-    queryKey: ['growth', cmp?.current.from, cmp?.current.to, cmp?.previous.from, cmp?.previous.to],
-    queryFn: () => fetchGrowth(cmp!, cmp!.label),
+    queryKey: ['growth', cmp?.current.from, cmp?.current.to, cmp?.previous.from, cmp?.previous.to, masterId],
+    queryFn: () => fetchGrowth(cmp!, cmp!.label, masterId),
     enabled: Boolean(cmp),
     refetchInterval: 60_000,
   });

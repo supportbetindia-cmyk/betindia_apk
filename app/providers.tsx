@@ -1,4 +1,6 @@
 'use client';
+import { Suspense } from 'react';
+import { MasterFilterProvider } from '@/components/MasterFilterProvider';
 
 import {
   environmentManager,
@@ -30,8 +32,9 @@ function getQueryClient() {
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <QueryClientProvider client={getQueryClient()}>
-      {children}
+      <Suspense fallback={<div role="status" className="empty2">Loading workspace…</div>}>
+        <MasterFilterProvider>{children}</MasterFilterProvider>
+      </Suspense>
     </QueryClientProvider>
   );
 }
-

@@ -374,6 +374,13 @@ html, body {
 .csv-compact .panel-head { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .csv-compact-title { font-size: 13px; font-weight: 650; color: var(--muted); }
 
+.master-filter { margin: 0 14px 14px; display: grid; gap: 6px; min-width: 0; }
+.master-filter label { font-size: 12px; font-weight: 700; }
+.master-filter select { width: 100%; min-width: 0; padding: 8px; border: 1px solid var(--border); border-radius: 6px; background: #fff; color: #0f172a; }
+.master-filter small { font-size: 11px; line-height: 1.4; overflow-wrap: anywhere; }
+.master-filter button { margin-left: 6px; text-decoration: underline; }
+@media print { .master-filter { display: none; } }
+
 /* Get-ID style filter bar */
 .report-filterbar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; padding: 4px 0 14px; border-bottom: 1px solid var(--border-soft); margin-bottom: 12px; }
 .ff { display: flex; flex-direction: column; gap: 5px; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: #64748b; }

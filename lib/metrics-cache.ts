@@ -12,9 +12,9 @@ function positiveMs(value: string | undefined, fallback: number): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-const caches = new Map<DateRangeKey, SnapshotCache<Metrics>>();
+const caches = new Map<string, SnapshotCache<Metrics>>();
 
-function createMetricsCache(rangeKey: DateRangeKey): SnapshotCache<Metrics> {
+function createMetricsCache(rangeKey: DateRangeKey, masterId?: string): SnapshotCache<Metrics> {
   return new SnapshotCache<Metrics>(async () => {
     const now = Date.now();
     const range = resolveDateRange(rangeKey, now);
@@ -24,6 +24,7 @@ function createMetricsCache(rangeKey: DateRangeKey): SnapshotCache<Metrics> {
     const events = await fetchEvents({
       from: historyFrom === null ? undefined : new Date(historyFrom).toISOString(),
       to: new Date(range.to).toISOString(),
+      masterId,
     });
     return computeMetrics(events, { rangeKey, nowMs: now });
   }, {
@@ -32,11 +33,12 @@ function createMetricsCache(rangeKey: DateRangeKey): SnapshotCache<Metrics> {
   });
 }
 
-export function getMetricsSnapshot(rangeKey: DateRangeKey) {
-  let cache = caches.get(rangeKey);
+export function getMetricsSnapshot(rangeKey: DateRangeKey, masterId?: string) {
+  const key = `${rangeKey}:${masterId ?? ''}`;
+  let cache = caches.get(key);
   if (!cache) {
-    cache = createMetricsCache(rangeKey);
-    caches.set(rangeKey, cache);
+    cache = createMetricsCache(rangeKey, masterId);
+    caches.set(key, cache);
   }
   return cache.get();
 }

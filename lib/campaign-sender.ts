@@ -126,11 +126,11 @@ function sbHeaders(extra: Record<string, string> = {}): Record<string, string> {
 }
 
 /** Insert a log row; false = already logged today (dedupe). */
-async function claimLog(row: Record<string, unknown>): Promise<boolean> {
+async function claimLog(row: Record<string, unknown>, tenantId = getCurrentTenantId()): Promise<boolean> {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/message_log?on_conflict=event_key`, {
     method: 'POST',
     headers: sbHeaders({ 'Content-Type': 'application/json', Prefer: 'resolution=ignore-duplicates,return=representation' }),
-    body: JSON.stringify({ tenant_id: getCurrentTenantId(), ...row }),
+    body: JSON.stringify({ tenant_id: tenantId, ...row }),
   });
   if (!res.ok) throw new Error(`log insert ${res.status}: ${(await res.text()).slice(0, 150)}`);
   return (await res.json() as unknown[]).length > 0;
@@ -169,7 +169,7 @@ export type SendResult = {
 };
 
 /** Send WhatsApp templates to a ready pool of candidates (capped at `limit`). */
-async function sendCandidates(pool: Candidate[], limit: number): Promise<SendResult> {
+async function sendCandidates(pool: Candidate[], limit: number, tenantId = getCurrentTenantId()): Promise<SendResult> {
   const batch = pool.slice(0, limit);
   const audience: Audience = pool[0]?.audience ?? 'winback';
   const cfg = await resolveSend(audience);
@@ -184,7 +184,7 @@ async function sendCandidates(pool: Candidate[], limit: number): Promise<SendRes
         event_key: eventKey, channel: 'whatsapp', template: cfg.templateName,
         event_type: c.audience, user_id: c.user_id, mobile: c.mobile,
         status: 'processing', detail: 'campaign send',
-      });
+      }, tenantId);
     } catch { failed++; continue; }
     if (!claimed) { skipped++; continue; }
 
@@ -243,16 +243,17 @@ async function fetchAll<T>(pathAndQuery: string): Promise<T[]> {
   return all;
 }
 
-async function fetchWinbackCooldown(cooldownDays: number): Promise<Set<string>> {
+async function fetchWinbackCooldown(cooldownDays: number, tenantId = getCurrentTenantId()): Promise<Set<string>> {
   const since = new Date(Date.now() - cooldownDays * DAY).toISOString();
   const rows = await fetchAll<{ user_id: string | null }>(
-    `message_log?select=user_id&event_type=in.(winback,first_deposit)&status=eq.sent&created_at=gte.${since}`,
+    `message_log?select=user_id&tenant_id=eq.${encodeURIComponent(tenantId)}&event_type=in.(winback,first_deposit)&status=eq.sent&created_at=gte.${since}`,
   );
   return new Set(rows.map((r) => r.user_id).filter((id): id is string => Boolean(id)));
 }
 
-async function fetchTxnRecency(): Promise<Map<string, { last: string; deposits: number }>> {
-  const rows = await fetchAll<{ user_id: string | null; type: string | null; created_at: string }>('transactions?select=user_id,type,created_at');
+async function fetchTxnRecency(tenantId = getCurrentTenantId(), masterId?: string): Promise<Map<string, { last: string; deposits: number }>> {
+  const master = masterId ? `&branch_id=eq.${encodeURIComponent(masterId)}` : '';
+  const rows = await fetchAll<{ user_id: string | null; type: string | null; created_at: string }>(`transactions?select=user_id,type,created_at&tenant_id=eq.${encodeURIComponent(tenantId)}${master}`);
   const m = new Map<string, { last: string; deposits: number }>();
   for (const r of rows) {
     if (!r.user_id) continue;
@@ -271,11 +272,12 @@ type DormantUserRow = {
 export type DormantCounts = { depositors: number; dormant: number; skippedNoMobile: number; skippedCooldown: number; eligible: number };
 
 /** Depositors (report OR webhook) silent >= inactiveDays and outside the cooldown. */
-export async function fetchDormantDepositors(config: DormantConfig = DEFAULT_DORMANT_CONFIG, now = Date.now()): Promise<{ candidates: Candidate[]; counts: DormantCounts }> {
+export async function fetchDormantDepositors(config: DormantConfig = DEFAULT_DORMANT_CONFIG, now = Date.now(), tenantId = getCurrentTenantId(), masterId?: string): Promise<{ candidates: Candidate[]; counts: DormantCounts }> {
+  const master = masterId ? `&branch_id=eq.${encodeURIComponent(masterId)}` : '';
   const [users, txn, cooldown] = await Promise.all([
-    fetchAll<DormantUserRow>('users?select=user_id,mobile,name,language,deposit_count,last_deposit_date,last_withdrawal_date'),
-    fetchTxnRecency(),
-    fetchWinbackCooldown(config.cooldownDays),
+    fetchAll<DormantUserRow>(`users?select=user_id,mobile,name,language,deposit_count,last_deposit_date,last_withdrawal_date&tenant_id=eq.${encodeURIComponent(tenantId)}${master}`),
+    fetchTxnRecency(tenantId, masterId),
+    fetchWinbackCooldown(config.cooldownDays, tenantId),
   ]);
 
   const candidates: Candidate[] = [];
@@ -304,10 +306,10 @@ export async function fetchDormantDepositors(config: DormantConfig = DEFAULT_DOR
 }
 
 /** Send the win-back template to dormant depositors (capped at `limit`). */
-export async function sendDormantWinback(limit = WINBACK_DAILY, config: DormantConfig = DEFAULT_DORMANT_CONFIG): Promise<SendResult & { counts: DormantCounts }> {
+export async function sendDormantWinback(limit = WINBACK_DAILY, config: DormantConfig = DEFAULT_DORMANT_CONFIG, tenantId = getCurrentTenantId(), masterId?: string): Promise<SendResult & { counts: DormantCounts }> {
   if (!(await winbackConfigured())) throw new Error('No WhatsApp key for winback — set the retention account or INTERAKT_CAMPAIGN_API_KEY');
-  const { candidates, counts } = await fetchDormantDepositors(config);
-  const result = await sendCandidates(candidates, limit);
+  const { candidates, counts } = await fetchDormantDepositors(config, Date.now(), tenantId, masterId);
+  const result = await sendCandidates(candidates, limit, tenantId);
   return { ...result, counts };
 }
 

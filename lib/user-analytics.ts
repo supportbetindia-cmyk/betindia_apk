@@ -10,6 +10,7 @@
 // (like storedReconciliation) would wrongly count rejected rows as approved.
 
 import { getCurrentTenantId } from './tenant';
+import { scopeMasterRows } from './master-filter';
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -436,10 +437,12 @@ export type ActiveUsersResult = {
 
 /** DISTINCT users with at least one transaction in [fromIso, toIso), plus a
  * per-day breakdown. Works for any window (incl. past custom ranges). */
-export async function activeUsers(tenantId: string, fromIso: string, toIso: string): Promise<ActiveUsersResult> {
-  const rows = await fetchAll<{ user_id: string | null; created_at: string }>(
-    `transactions?select=user_id,created_at&tenant_id=eq.${encodeURIComponent(tenantId)}&created_at=gte.${encodeURIComponent(fromIso)}&created_at=lt.${encodeURIComponent(toIso)}`
+export async function activeUsers(tenantId: string, fromIso: string, toIso: string, masterId?: string): Promise<ActiveUsersResult> {
+  const rawRows = await fetchAll<{ user_id: string | null; branch_id: string | null; created_at: string }>(
+    `transactions?select=user_id,branch_id,created_at&tenant_id=eq.${encodeURIComponent(tenantId)}&created_at=gte.${encodeURIComponent(fromIso)}&created_at=lt.${encodeURIComponent(toIso)}`
   );
+  const users = masterId ? await fetchMasterAssignments(tenantId) : [];
+  const rows = scopeMasterRows(users, rawRows, masterId).transactions;
   const all = new Set<string>();
   const byDay = new Map<string, Set<string>>();
   for (const r of rows) {
@@ -460,14 +463,15 @@ export async function activeUsers(tenantId: string, fromIso: string, toIso: stri
 /** Per-user breakdown scoped to a time window: each user's deposits, withdrawals,
  * P/L, first deposit and last activity computed ONLY from transactions in
  * [fromIso, toIso). Only users with activity in the window are returned. */
-export async function fetchUserBreakdown(tenantId: string, fromIso: string, toIso: string, nowMs = Date.now()): Promise<UserRow[]> {
+export async function fetchUserBreakdown(tenantId: string, fromIso: string, toIso: string, nowMs = Date.now(), masterId?: string): Promise<UserRow[]> {
   const t = `&tenant_id=eq.${encodeURIComponent(tenantId)}`;
-  const [users, txns] = await Promise.all([
+  const [allUsers, allTxns] = await Promise.all([
     fetchAll<AnalyticsUser>(`users?select=user_id,branch_id,name,mobile,register_date${t}`),
     fetchAll<AnalyticsTxn>(
       `transactions?select=type,user_id,branch_id,user_name,mobile_number,amount,payment_status,remarks,created_at&created_at=gte.${encodeURIComponent(fromIso)}&created_at=lt.${encodeURIComponent(toIso)}&order=created_at.asc${t}`
     ),
   ]);
+  const { users, transactions: txns } = scopeMasterRows(allUsers, allTxns, masterId);
   const meta = new Map(users.map((u) => [String(u.user_id).trim(), u]));
   const map = new Map<string, UserRow>();
 
@@ -535,7 +539,12 @@ function classifyStatus(status: string | null): UserTxn['status'] {
 }
 
 /** All transactions for one user, newest first, with a normalised status. */
-export async function fetchUserTransactions(tenantId: string, userId: string): Promise<UserTxn[]> {
+export async function fetchUserTransactions(tenantId: string, userId: string, masterId?: string): Promise<UserTxn[]> {
+  if (masterId) {
+    const assignments = await fetchMasterAssignments(tenantId);
+    const user = assignments.find((row) => row.user_id === userId);
+    if (!user || user.branch_id !== masterId) return [];
+  }
   const rows = await fetchAll<Omit<UserTxn, 'status'>>(
     `transactions?select=id,type,transaction_id,amount,payment_status,remarks,created_at&tenant_id=eq.${encodeURIComponent(tenantId)}&user_id=eq.${encodeURIComponent(userId)}&order=created_at.desc`
   );
@@ -568,7 +577,7 @@ export async function matchUserIds(tenantId: string, ids: string[]): Promise<Mat
 }
 
 /** Fetch every user + transaction row FOR ONE TENANT and build the analytics. */
-export async function fetchUserAnalytics(tenantId: string, nowMs = Date.now()): Promise<UserAnalytics> {
+export async function fetchUserAnalytics(tenantId: string, nowMs = Date.now(), masterId?: string): Promise<UserAnalytics> {
   const t = `&tenant_id=eq.${encodeURIComponent(tenantId)}`;
   const [users, txns] = await Promise.all([
     fetchAll<AnalyticsUser>(`users?select=user_id,branch_id,name,mobile,register_date,first_deposit_date,first_deposit_amount,last_deposit_date,last_withdrawal_date,total_deposit,deposit_count,total_withdrawal,withdrawal_count,status_label${t}`),
@@ -576,5 +585,12 @@ export async function fetchUserAnalytics(tenantId: string, nowMs = Date.now()): 
       `transactions?select=type,user_id,branch_id,user_name,mobile_number,amount,payment_status,remarks,created_at&order=created_at.asc${t}`
     ),
   ]);
-  return buildUserAnalytics(users, txns, nowMs);
+  const scoped = scopeMasterRows(users, txns, masterId);
+  return buildUserAnalytics(scoped.users, scoped.transactions, nowMs);
+}
+
+export function fetchMasterAssignments(tenantId: string) {
+  return fetchAll<{ user_id: string; branch_id: string | null }>(
+    `users?select=user_id,branch_id&tenant_id=eq.${encodeURIComponent(tenantId)}&order=user_id.asc`,
+  );
 }

@@ -4,8 +4,9 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { CalendarDays, Printer } from 'lucide-react';
 import { Sidebar } from '@/components/Sidebar';
+import { useMasterFilter } from '@/components/MasterFilterProvider';
 import { useAuthRedirect } from '@/hooks/useAuthRedirect';
-import { backendRequest, getSelectedTenantId } from '@/lib/backend-api';
+import { backendRequest } from '@/lib/backend-api';
 import { count, money } from '@/lib/format';
 
 type ReportType = 'daily' | 'weekly' | 'monthly';
@@ -38,9 +39,9 @@ const KPI: { key: keyof Report['overview']['kpis']; label: string; format: (valu
 ];
 
 export default function ReportsPage() {
-  const tenantId = getSelectedTenantId();
+  const { tenantId, masterId, scopedHref } = useMasterFilter();
   const [type, setType] = useState<ReportType>('daily');
-  const query = useQuery({ queryKey: ['report', tenantId, type], queryFn: () => backendRequest<Report>(`/reports/${type}`), enabled: Boolean(tenantId) });
+  const query = useQuery({ queryKey: ['report', tenantId, type, masterId], queryFn: ({ signal }) => backendRequest<Report>(scopedHref(`/reports/${type}`), { tenantId, signal }), enabled: Boolean(tenantId) });
   useAuthRedirect(query.error);
   const report = query.data;
 
@@ -59,7 +60,7 @@ export default function ReportsPage() {
 
       {report ? <>
         <section className="panel report-summary-head">
-          <div><span className="report-eyebrow">{type} performance report</span><h2>{report.overview.label}</h2></div>
+          <div><span className="report-eyebrow">{type} performance report · {masterId ? `Master ${masterId}` : 'All Masters'}</span><h2>{report.overview.label}</h2></div>
           <div className="report-range"><CalendarDays size={16} /><span>{range(report.overview.range.current.start, report.overview.range.current.end)}</span></div>
         </section>
 
@@ -73,6 +74,7 @@ export default function ReportsPage() {
           </div>; })}
         </section>
 
+        {type === 'monthly' && masterId ? <p>Amounts reflect this Master. Allocation percentages and targets are company-wide.</p> : null}
         {type === 'monthly' ? <div className="report-monthly-grid">
           <section className="panel"><div className="panel-head"><h3>Profit distribution</h3></div>
             {report.allocations?.length ? report.allocations.map((item) => <div className="report-line" key={item.id}><span>{item.name}{item.isRetained ? ' · retained' : ''}</span><b>{item.percent}% · {money(item.amount)}</b></div>) : <div className="empty2">No profit split configured.</div>}

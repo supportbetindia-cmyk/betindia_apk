@@ -2,6 +2,8 @@
 // Server-only (service_role key). Period deposits/withdrawals/active come from
 // the transactions table; registrations/FTD come from the users table dates.
 
+import { scopeMasterRows } from './master-filter';
+
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -59,8 +61,8 @@ export type GrowthResult = {
   metrics: GrowthMetric[];
 };
 
-type UserLite = { user_id: string; register_date: string | null; first_deposit_date: string | null };
-type TxnLite = { user_id: string | null; type: 'deposit' | 'withdrawal'; amount: number | null; payment_status: string | null; created_at: string };
+type UserLite = { user_id: string; branch_id: string | null; register_date: string | null; first_deposit_date: string | null };
+type TxnLite = { user_id: string | null; branch_id: string | null; type: 'deposit' | 'withdrawal'; amount: number | null; payment_status: string | null; created_at: string };
 
 const inRange = (iso: string | null, a: number, b: number): boolean => {
   if (!iso) return false;
@@ -74,16 +76,17 @@ function growth(cur: number, prev: number): { pct: number | null; x: number | nu
   return { pct: Math.round(((cur - prev) / prev) * 1000) / 10, x: Math.round((cur / prev) * 100) / 100, state: 'OK' };
 }
 
-export async function computeGrowth(tenantId: string, fromIso: string, toIso: string, prevFromIso: string, prevToIso: string, label = ''): Promise<GrowthResult> {
+export async function computeGrowth(tenantId: string, fromIso: string, toIso: string, prevFromIso: string, prevToIso: string, label = '', masterId?: string): Promise<GrowthResult> {
   const from = Date.parse(fromIso), to = Date.parse(toIso), pf = Date.parse(prevFromIso), pt = Date.parse(prevToIso);
   const lo = new Date(Math.min(from, pf)).toISOString();
   const hi = new Date(Math.max(to, pt)).toISOString();
   const tf = `&tenant_id=eq.${encodeURIComponent(tenantId)}`;
 
-  const [users, txns] = await Promise.all([
-    fetchAll<UserLite>(`users?select=user_id,register_date,first_deposit_date${tf}`),
-    fetchAll<TxnLite>(`transactions?select=user_id,type,amount,payment_status,created_at&created_at=gte.${encodeURIComponent(lo)}&created_at=lt.${encodeURIComponent(hi)}${tf}`),
+  const [allUsers, allTxns] = await Promise.all([
+    fetchAll<UserLite>(`users?select=user_id,branch_id,register_date,first_deposit_date${tf}`),
+    fetchAll<TxnLite>(`transactions?select=user_id,branch_id,type,amount,payment_status,created_at&created_at=gte.${encodeURIComponent(lo)}&created_at=lt.${encodeURIComponent(hi)}${tf}`),
   ]);
+  const { users, transactions: txns } = scopeMasterRows(allUsers, allTxns, masterId);
 
   const calc = (a: number, b: number): PeriodMetrics => {
     let newCustomers = 0, ftd = 0;

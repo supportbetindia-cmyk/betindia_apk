@@ -5,6 +5,8 @@ import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import type { Metrics, Count } from '@/lib/metrics';
 import { Sidebar } from '@/components/Sidebar';
+import { useMasterFilter } from '@/components/MasterFilterProvider';
+import { withMaster } from '@/lib/master-filter';
 import { Topbar } from '@/components/Topbar';
 import { KpiCard } from '@/components/KpiCard';
 import { AreaChart } from '@/components/AreaChart';
@@ -65,6 +67,7 @@ function  SourceList({ items, empty, note }: { items: Count[]; empty: string; no
 }
 
 export default function Dashboard() {
+  const { masterId } = useMasterFilter();
   const router = useRouter();
   const [m, setM] = useState<Metrics | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -85,7 +88,7 @@ export default function Dashboard() {
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch(`/api/metrics?range=${range}`, { cache: 'no-store' });
+      const res = await fetch(withMaster(`/api/metrics?range=${range}`, masterId), { cache: 'no-store' });
       const body = (await res.json()) as MetricsResponse & { message?: string };
       if (!res.ok) return setError(body.message || 'Failed to load metrics');
       setM(body as Metrics);
@@ -95,7 +98,7 @@ export default function Dashboard() {
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
-  }, [range]);
+  }, [range, masterId]);
 
   useEffect(() => {
     load();

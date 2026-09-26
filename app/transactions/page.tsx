@@ -4,6 +4,8 @@ import { logout } from '@/lib/logout';
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Sidebar } from '@/components/Sidebar';
+import { useMasterFilter } from '@/components/MasterFilterProvider';
+import { withMaster } from '@/lib/master-filter';
 import type { CSSProperties, ReactNode } from 'react';
 import {
   BadgeCheck,
@@ -15,7 +17,7 @@ import {
   Search,
   Upload,
 } from 'lucide-react';
-import { backendRequest, getSelectedTenantId } from '@/lib/backend-api';
+import { backendRequest } from '@/lib/backend-api';
 import {
   TRANSACTION_RANGE_OPTIONS,
   resolveTransactionRange,
@@ -57,10 +59,10 @@ const statusClass = (status: Row['display_status']) =>
 
 // The active company is kept in the tenant header by backendRequest, so each
 // company shows its own transactions from the backend (saas schema).
-async function fetchTransactionData(range: TransactionRangeKey): Promise<Data> {
+async function fetchTransactionData(range: TransactionRangeKey, masterId: string, tenantId: string | null, signal: AbortSignal): Promise<Data> {
   const { from, to } = resolveTransactionRange(range);
   const query = `from=${from ?? ''}&to=${to}`;
-  return backendRequest<Data>(`/transactions/summary?${query}`);
+  return backendRequest<Data>(withMaster(`/transactions/summary?${query}`, masterId), { tenantId, signal });
 }
 
 export default function TransactionsPage() {
@@ -68,14 +70,14 @@ export default function TransactionsPage() {
   const [range, setRange] = useState<TransactionRangeKey>('today');
   const [search, setSearch] = useState('');
   const [visibleCount, setVisibleCount] = useState(50);
-  const tenantId = getSelectedTenantId();
+  const { tenantId, masterId } = useMasterFilter();
   const transactionQuery = useQuery({
     // tenantId is in the key so switching company refetches instead of showing cache.
-    queryKey: ['transactions', tenantId, range],
-    queryFn: () => fetchTransactionData(range),
+    queryKey: ['transactions', tenantId, range, masterId],
+    queryFn: ({ signal }) => fetchTransactionData(range, masterId, tenantId, signal),
+    enabled: Boolean(tenantId),
     refetchInterval: 30_000,
     refetchIntervalInBackground: false,
-    placeholderData: (previousData) => previousData,
   });
   const data = transactionQuery.data;
   const rangeLabel = resolveTransactionRange(range).label;

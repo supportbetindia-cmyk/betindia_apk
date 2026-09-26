@@ -3,6 +3,8 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Users, Loader2 } from 'lucide-react';
+import { useMasterFilter } from './MasterFilterProvider';
+import { withMaster } from '@/lib/master-filter';
 
 type Preset = 'today' | 'week' | 'month' | '7d' | '30d' | 'custom';
 
@@ -44,14 +46,15 @@ function resolveRange(preset: Preset, customFrom: string, customTo: string): Ran
   return { from: from.toISOString(), to: to.toISOString(), label: `${customFrom} → ${customTo}` };
 }
 
-async function fetchActive(range: NonNullable<Range>): Promise<number> {
-  const res = await fetch(`/api/user-analytics/active?from=${encodeURIComponent(range.from)}&to=${encodeURIComponent(range.to)}`);
+async function fetchActive(range: NonNullable<Range>, masterId: string): Promise<number> {
+  const res = await fetch(withMaster(`/api/user-analytics/active?from=${encodeURIComponent(range.from)}&to=${encodeURIComponent(range.to)}`, masterId));
   const body = (await res.json()) as { count?: number; error?: string };
   if (!res.ok) throw new Error(body.error || 'Failed to load active users');
   return body.count ?? 0;
 }
 
 export function ActiveUsers() {
+  const { masterId } = useMasterFilter();
   const [preset, setPreset] = useState<Preset>('today');
   const today = ymd(new Date());
   const [customFrom, setCustomFrom] = useState(today);
@@ -60,8 +63,8 @@ export function ActiveUsers() {
   const range = useMemo(() => resolveRange(preset, customFrom, customTo), [preset, customFrom, customTo]);
 
   const query = useQuery({
-    queryKey: ['active-users', range?.from, range?.to],
-    queryFn: () => fetchActive(range as NonNullable<Range>),
+    queryKey: ['active-users', range?.from, range?.to, masterId],
+    queryFn: () => fetchActive(range as NonNullable<Range>, masterId),
     enabled: Boolean(range),
     refetchInterval: 60_000,
   });

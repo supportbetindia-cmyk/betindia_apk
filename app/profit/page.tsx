@@ -4,12 +4,13 @@ import { FormEvent, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Trash2, PiggyBank } from 'lucide-react';
 import { Sidebar } from '@/components/Sidebar';
+import { useMasterFilter } from '@/components/MasterFilterProvider';
 import { PeriodTabs } from '@/components/saas/PeriodTabs';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAuthRedirect } from '@/hooks/useAuthRedirect';
 import { money } from '@/lib/format';
-import { backendRequest, getSelectedTenantId } from '@/lib/backend-api';
+import { backendRequest } from '@/lib/backend-api';
 
 type Line = { id: string; name: string; percent: number; isRetained: boolean; amount: number };
 type Plan = { period: string; distributable: number; totalPercent: number; unallocated: number; valid: boolean; lines: Line[] };
@@ -18,15 +19,15 @@ const PERIODS = [{ key: 'month', label: 'This month' }, { key: 'quarter', label:
 
 export default function ProfitPage() {
   const qc = useQueryClient();
-  const tenantId = getSelectedTenantId();
+  const { tenantId, masterId, scopedHref } = useMasterFilter();
   const [period, setPeriod] = useState('month');
   const [name, setName] = useState('');
   const [percent, setPercent] = useState('');
   const [retained, setRetained] = useState(false);
 
   const query = useQuery({
-    queryKey: ['allocations', tenantId, period],
-    queryFn: () => backendRequest<Plan>(`/allocations?period=${period}`),
+    queryKey: ['allocations', tenantId, period, masterId],
+    queryFn: ({ signal }) => backendRequest<Plan>(scopedHref(`/allocations?period=${period}`), { tenantId, signal }),
     enabled: Boolean(tenantId),
   });
   useAuthRedirect(query.error);
@@ -64,6 +65,8 @@ export default function ProfitPage() {
 
         {!tenantId ? <div className="banner2">Select a company on the SaaS console first.</div> : null}
 
+        {masterId ? <div className="banner2">Amounts show Master {masterId}. Editing the split changes company-wide allocation percentages.</div> : null}
+        {query.isError ? <div role="alert" className="banner2">{query.error.message}</div> : null}
         {d ? <>
           <div style={{ display: 'flex', gap: 12, alignItems: 'baseline', marginBottom: 8 }}>
             <span style={{ fontSize: 15, color: '#475569' }}>Profit to share:</span>

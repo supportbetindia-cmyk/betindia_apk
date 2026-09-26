@@ -5,6 +5,8 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { Sidebar } from '@/components/Sidebar';
+import { useMasterFilter } from '@/components/MasterFilterProvider';
+import { withMaster } from '@/lib/master-filter';
 import { CsvMatch } from '@/components/CsvMatch';
 import { UserDetail } from '@/components/UserDetail';
 import { GrowthPanel } from '@/components/GrowthPanel';
@@ -44,15 +46,15 @@ const STATUS_CLASS: Record<UserStatus, string> = {
   registered_only: 's-sent',
 };
 
-async function fetchAnalytics(): Promise<Data> {
-  const res = await fetch('/api/user-analytics', { cache: 'no-store' });
+async function fetchAnalytics(masterId: string): Promise<Data> {
+  const res = await fetch(withMaster('/api/user-analytics', masterId), { cache: 'no-store' });
   const body = (await res.json()) as Data;
   if (!res.ok) throw new Error(body.error || 'User analytics is temporarily unavailable');
   return body;
 }
 
-async function fetchBreakdown(from: string, to: string): Promise<UserRow[]> {
-  const res = await fetch(`/api/user-analytics/breakdown?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
+async function fetchBreakdown(from: string, to: string, masterId: string): Promise<UserRow[]> {
+  const res = await fetch(withMaster(`/api/user-analytics/breakdown?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`, masterId));
   const body = (await res.json()) as { rows?: UserRow[]; error?: string };
   if (!res.ok) throw new Error(body.error || 'Failed to load breakdown');
   return body.rows ?? [];
@@ -100,10 +102,10 @@ function compareRows(a: UserRow, b: UserRow, key: SortKey, dir: SortDir): number
 }
 
 export default function AnalyticsPage() {
+  const { masterId } = useMasterFilter();
   const router = useRouter();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
-  const [masterFilter, setMasterFilter] = useState('');
   const [visibleCount, setVisibleCount] = useState(50);
   const [sortKey, setSortKey] = useState<SortKey>('depositTotal');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
@@ -115,8 +117,8 @@ export default function AnalyticsPage() {
   const [tableTo, setTableTo] = useState(today);
 
   const query = useQuery({
-    queryKey: ['user-analytics'],
-    queryFn: fetchAnalytics,
+    queryKey: ['user-analytics', masterId],
+    queryFn: () => fetchAnalytics(masterId),
     refetchInterval: 60_000,
   });
 
@@ -129,10 +131,10 @@ export default function AnalyticsPage() {
   const [winbackMsg, setWinbackMsg] = useState('');
 
   const dormantPreview = useQuery({
-    queryKey: ['dormant-preview'],
+    queryKey: ['dormant-preview', masterId],
     enabled: statusFilter === 'dormant_depositors',
     queryFn: async () => {
-      const res = await fetch('/api/campaigns/dormant', { cache: 'no-store' });
+      const res = await fetch(withMaster('/api/campaigns/dormant', masterId), { cache: 'no-store' });
       return res.json() as Promise<{ configured: boolean; eligible?: number; dormant?: number; skippedCooldown?: number; error?: string }>;
     },
   });
@@ -147,7 +149,7 @@ export default function AnalyticsPage() {
     setWinbackSending(true);
     setWinbackMsg('');
     try {
-      const res = await fetch('/api/campaigns/dormant', {
+      const res = await fetch(withMaster('/api/campaigns/dormant', masterId), {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ limit: 200 }),
       });
       const b = await res.json();
@@ -159,12 +161,12 @@ export default function AnalyticsPage() {
     } finally {
       setWinbackSending(false);
     }
-  }, [dormantPreview]);
+  }, [dormantPreview, masterId]);
 
   const scoped = tablePreset !== 'all';
   const breakdownQuery = useQuery({
-    queryKey: ['user-breakdown', tableRange?.from, tableRange?.to],
-    queryFn: () => fetchBreakdown(tableRange!.from as string, tableRange!.to),
+    queryKey: ['user-breakdown', tableRange?.from, tableRange?.to, masterId],
+    queryFn: () => fetchBreakdown(tableRange!.from as string, tableRange!.to, masterId),
     enabled: scoped && Boolean(tableRange?.from),
     refetchInterval: 60_000,
   });
@@ -172,12 +174,6 @@ export default function AnalyticsPage() {
   const data = query.data;
   const t = data?.totals;
   const tableSource = scoped ? (breakdownQuery.data ?? []) : (data?.users ?? []);
-
-  // Distinct Master / Branch IDs for the "Select Master" filter.
-  const masters = useMemo(
-    () => Array.from(new Set((data?.users ?? []).map((u) => u.branchId).filter((b): b is string => Boolean(b)))).sort(),
-    [data]
-  );
 
   const logout = useCallback(async () => {
     await logout();
@@ -191,7 +187,6 @@ export default function AnalyticsPage() {
       if (statusFilter === 'non_depositors' && r.depositor) return false;
       if (statusFilter === 'dormant_depositors' && !(r.depositor && r.status === 'dormant')) return false;
       if (statusFilter !== 'all' && statusFilter !== 'depositors' && statusFilter !== 'non_depositors' && statusFilter !== 'dormant_depositors' && r.status !== statusFilter) return false;
-      if (masterFilter && r.branchId !== masterFilter) return false;
       if (!q) return true;
       return (
         (r.name ?? '').toLowerCase().includes(q) ||
@@ -199,7 +194,7 @@ export default function AnalyticsPage() {
         r.userId.toLowerCase().includes(q)
       );
     });
-  }, [tableSource, search, statusFilter, masterFilter]);
+  }, [tableSource, search, statusFilter]);
 
   const sorted = useMemo(
     () => [...filtered].sort((a, b) => compareRows(a, b, sortKey, sortDir)),
@@ -366,15 +361,6 @@ export default function AnalyticsPage() {
                     <SelectContent>{FILTER_OPTIONS.map((f) => <SelectItem key={f.key} value={f.key}>{f.label}</SelectItem>)}</SelectContent>
                   </Select>
                 </label>
-                <label className="ff">Select Master
-                  <Select value={masterFilter || 'ALL'} onValueChange={(v) => { setMasterFilter(v === 'ALL' ? '' : v); setVisibleCount(50); }}>
-                    <SelectTrigger className="w-[150px]"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="ALL">All Masters</SelectItem>
-                      {masters.map((m) => <SelectItem key={m} value={m}>{m}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </label>
                 <label className="ff">Select by Date
                   <Select value={tablePreset} onValueChange={(v) => { setTablePreset(v as RangePreset); setVisibleCount(50); }}>
                     <SelectTrigger className="w-[150px]"><SelectValue /></SelectTrigger>
@@ -409,7 +395,7 @@ export default function AnalyticsPage() {
                 {scoped
                   ? `Showing ${tableRange?.label ?? 'range'} · ${filtered.length.toLocaleString('en-IN')} users`
                   : `Lifetime totals · ${filtered.length.toLocaleString('en-IN')} users`}
-                {masterFilter ? ` · Master ${masterFilter}` : ''}
+                {masterId ? ` · Master ${masterId}` : ''}
                 {scoped && breakdownQuery.isFetching ? ' · loading…' : ''}
               </div>
 
@@ -537,4 +523,3 @@ function SortTh({ label, k, sortKey, sortDir, onSort }: {
     </span>
   );
 }
-

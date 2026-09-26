@@ -4,11 +4,12 @@ import { FormEvent, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Trash2 } from 'lucide-react';
 import { Sidebar } from '@/components/Sidebar';
+import { useMasterFilter } from '@/components/MasterFilterProvider';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAuthRedirect } from '@/hooks/useAuthRedirect';
 import { money, count } from '@/lib/format';
-import { backendRequest, getSelectedTenantId } from '@/lib/backend-api';
+import { backendRequest } from '@/lib/backend-api';
 
 type Target = {
   id: string; metric: string; period: string;
@@ -33,14 +34,14 @@ const label = (arr: { key: string; label: string }[], k: string) => arr.find((x)
 
 export default function TargetsPage() {
   const qc = useQueryClient();
-  const tenantId = getSelectedTenantId();
+  const { tenantId, masterId, scopedHref } = useMasterFilter();
   const [metric, setMetric] = useState('profit');
   const [period, setPeriod] = useState('month');
   const [value, setValue] = useState('');
 
   const query = useQuery({
-    queryKey: ['targets', tenantId],
-    queryFn: () => backendRequest<Target[]>('/targets'),
+    queryKey: ['targets', tenantId, masterId],
+    queryFn: ({ signal }) => backendRequest<Target[]>(scopedHref('/targets'), { tenantId, signal }),
     enabled: Boolean(tenantId),
   });
   useAuthRedirect(query.error);
@@ -75,6 +76,8 @@ export default function TargetsPage() {
 
         {!tenantId ? <div className="banner2">Select a company on the SaaS console first.</div> : null}
 
+        {masterId ? <div className="banner2">Actuals show Master {masterId}&apos;s contribution toward company-wide targets. Editing a target affects the whole company.</div> : null}
+        {query.isError ? <div role="alert" className="banner2">{query.error.message}</div> : null}
         <div className="panel">
           <div className="panel-head"><h3>Set a target</h3></div>
           <form onSubmit={submit} style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>

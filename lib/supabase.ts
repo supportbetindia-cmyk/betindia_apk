@@ -28,6 +28,7 @@ export type FetchEventsOptions = {
   limit?: number;
   from?: string;
   to?: string;
+  masterId?: string;
 };
 
 function positiveInteger(value: number | undefined, fallback: number): number {
@@ -83,6 +84,7 @@ export async function fetchEvents(options: FetchEventsOptions = {}): Promise<Ana
   });
   if (options.from) baseParams.append('created_at', `gte.${options.from}`);
   if (options.to) baseParams.append('created_at', `lt.${options.to}`);
+  if (options.masterId) baseParams.append('properties->>master_id', `eq.${options.masterId}`);
 
   const firstParams = new URLSearchParams(baseParams);
   firstParams.set('limit', String(pageLimit));

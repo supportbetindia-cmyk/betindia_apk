@@ -1,6 +1,8 @@
 'use client';
 
 import Link from 'next/link';
+import { MasterFilter } from './MasterFilter';
+import { useMasterFilter } from './MasterFilterProvider';
 import { usePathname } from 'next/navigation';
 import {
   BarChart3,
@@ -58,6 +60,7 @@ export function Sidebar({
   quickStats?: { label: string; value: string }[];
 }) {
   const pathname = usePathname();
+  const { scopedHref } = useMasterFilter();
 
   return (
     <aside className="sidebar">
@@ -66,13 +69,14 @@ export function Sidebar({
         <div><div className="product-name">Customer Intelligence</div><div className="logo-console">Company Growth</div></div>
       </div>
 
+      <MasterFilter />
       <nav className="nav" aria-label="Main navigation">
         {NAV.map((group) => <div className="nav-group" key={group.label}>
           <div className="nav-section-label">{group.label}</div>
           {group.items.map((item) => {
             const active = item.href === '/' ? pathname === '/' : pathname.startsWith(item.href);
             const Icon = item.icon;
-            return <Link key={item.label} href={item.href} title={item.label} aria-current={active ? 'page' : undefined} className={`nav-item${active ? ' active' : ''}`}>
+            return <Link key={item.label} href={scopedHref(item.href)} title={item.label} aria-current={active ? 'page' : undefined} className={`nav-item${active ? ' active' : ''}`}>
               <span className="nav-icon"><Icon size={18} strokeWidth={1.8} /></span>
               <span className="nav-label">{item.label}</span>
             </Link>;

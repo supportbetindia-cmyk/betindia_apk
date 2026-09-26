@@ -43,12 +43,14 @@ export function setSelectedTenantId(tenantId: string): void {
   // Mirror to a cookie so server-side legacy API routes know the active company.
   // (localStorage is client-only; the cookie is what getRequestTenantId reads.)
   document.cookie = `${TENANT_STORAGE_KEY}=${tenantId}; path=/; max-age=31536000; samesite=lax`;
+  window.dispatchEvent(new Event('ci-tenant-change'));
 }
 
 export function clearSelectedTenantId(): void {
   if (typeof window === 'undefined') return;
   window.localStorage.removeItem(TENANT_STORAGE_KEY);
   document.cookie = `${TENANT_STORAGE_KEY}=; path=/; max-age=0; samesite=lax`;
+  window.dispatchEvent(new Event('ci-tenant-change'));
 }
 
 export async function backendRequest<T>(

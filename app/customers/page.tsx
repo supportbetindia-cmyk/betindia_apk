@@ -5,12 +5,14 @@ import { ChangeEvent, FormEvent, useRef, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Clock3, Search, Upload, Users } from 'lucide-react';
 import { Sidebar } from '@/components/Sidebar';
+import { useMasterFilter } from '@/components/MasterFilterProvider';
+import { withMaster } from '@/lib/master-filter';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { useAuthRedirect } from '@/hooks/useAuthRedirect';
 import { money as inr, day } from '@/lib/format';
-import { backendRequest, getSelectedTenantId } from '@/lib/backend-api';
+import { backendRequest } from '@/lib/backend-api';
 import { parseUsersCsv } from '@/lib/user-file';
 
 // Player figures can carry paise → show 2 decimals.
@@ -51,11 +53,11 @@ type CustomerList = {
 };
 type ScheduleStatus = { enabled: boolean; timezone: string; atRiskDays: number; inactiveDays: number; lastRunAt: string | null };
 
-async function loadCustomers(search: string, page: number, missingReg: boolean): Promise<CustomerList> {
+async function loadCustomers(search: string, page: number, missingReg: boolean, masterId: string, tenantId: string | null, signal: AbortSignal): Promise<CustomerList> {
   const query = new URLSearchParams({ page: String(page), pageSize: '50' });
   if (search) query.set('search', search);
   if (missingReg) query.set('missingRegistration', 'true');
-  return backendRequest<CustomerList>(`/customers?${query.toString()}`);
+  return backendRequest<CustomerList>(withMaster(`/customers?${query.toString()}`, masterId), { tenantId, signal });
 }
 
 // Everyday words + colour for each lifecycle stage, so anyone can read it.
@@ -84,10 +86,10 @@ export default function CustomersPage() {
   const [importResult, setImportResult] = useState<string | null>(null);
   const [missingReg, setMissingReg] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
-  const tenantId = getSelectedTenantId();
+  const { tenantId, masterId, scopedHref } = useMasterFilter();
   const query = useQuery({
-    queryKey: ['backend-customers', tenantId, search, page, missingReg],
-    queryFn: () => loadCustomers(search, page, missingReg),
+    queryKey: ['backend-customers', tenantId, search, page, missingReg, masterId],
+    queryFn: ({ signal }) => loadCustomers(search, page, missingReg, masterId, tenantId, signal),
     enabled: Boolean(tenantId),
   });
   const schedule = useQuery({
@@ -318,7 +320,7 @@ export default function CustomersPage() {
                   const pnl = customer.netPnl == null || customer.netPnl === '' ? null : Number(customer.netPnl);
                   return (
                     <tr key={customer.id}>
-                      <td><Link href={`/customers/${customer.id}`} style={{ color: '#4f46e5', fontWeight: 700 }}>{customer.name || 'No name'}</Link></td>
+                      <td><Link href={scopedHref(`/customers/${customer.id}`)} style={{ color: '#4f46e5', fontWeight: 700 }}>{customer.name || 'No name'}</Link></td>
                       <td>{customer.externalUserId || customer.masterId || <span className="muted">—</span>}</td>
                       <td>{customer.phone || <span className="muted">—</span>}</td>
                       <td><StageBadge value={customer.currentLifecycle} /></td>
