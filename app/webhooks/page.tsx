@@ -13,9 +13,10 @@ type WebhookSettings = {
   configured: boolean;
   depositPath: string;
   withdrawalPath: string;
+  updatePath: string;
 };
 
-type RotatedSecret = Pick<WebhookSettings, 'depositPath' | 'withdrawalPath'> & { secret: string };
+type RotatedSecret = Pick<WebhookSettings, 'depositPath' | 'withdrawalPath' | 'updatePath'> & { secret: string };
 
 export default function WebhooksPage() {
   const router = useRouter();
@@ -58,7 +59,10 @@ export default function WebhooksPage() {
   const base = getBackendBaseUrl();
   const depositUrl = settings.data ? `${base}${settings.data.depositPath}` : '';
   const withdrawalUrl = settings.data ? `${base}${settings.data.withdrawalPath}` : '';
-console.log(depositUrl)
+  const updateUrl = settings.data ? `${base}${settings.data.updatePath}` : '';
+  // Full URLs with the just-generated secret as ?token= — ready to paste into a provider
+  // that only supports a URL (e.g. Get-ID). Only available right after generating.
+  const withToken = (url: string) => (secret ? `${url}?token=${secret}` : '');
   return (
     <div className="shell">
       <Sidebar />
@@ -85,7 +89,8 @@ console.log(depositUrl)
             </div>
             <UrlRow label="Deposits" value={depositUrl} copied={copied === 'deposit'} onCopy={() => copy(depositUrl, 'deposit')} />
             <UrlRow label="Withdrawals" value={withdrawalUrl} copied={copied === 'withdrawal'} onCopy={() => copy(withdrawalUrl, 'withdrawal')} />
-            <p className="webhook-note">Send the secret in the <code>X-Webhook-Secret</code> request header. Never add it to the URL.</p>
+            <UrlRow label="Transaction updates" value={updateUrl} copied={copied === 'update'} onCopy={() => copy(updateUrl, 'update')} />
+            <p className="webhook-note">Send the secret in the <code>X-Webhook-Secret</code> header, <b>or</b> add <code>?token=YOUR_SECRET</code> to the URL if your provider only supports a URL. Generate the secret on the right to get the full ready-to-paste links.</p>
           </section>
 
           <section className="panel webhook-panel">
@@ -103,6 +108,16 @@ console.log(depositUrl)
               <RotateCw size={15} className={rotate.isPending ? 'spin' : ''} />
               {rotate.isPending ? 'Generating…' : settings.data.configured ? 'Rotate secret' : 'Generate secret'}
             </button>
+
+            {secret ? (
+              <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid #eef2f7' }}>
+                <div style={{ fontWeight: 700, marginBottom: 4 }}>Ready-to-paste URLs (secret included)</div>
+                <p className="webhook-note" style={{ marginTop: 0 }}>Copy these straight into your provider. Shown only now — they include the secret.</p>
+                <UrlRow label="Deposit" value={withToken(depositUrl)} copied={copied === 'tdep'} onCopy={() => copy(withToken(depositUrl), 'tdep')} />
+                <UrlRow label="Withdrawal" value={withToken(withdrawalUrl)} copied={copied === 'twd'} onCopy={() => copy(withToken(withdrawalUrl), 'twd')} />
+                <UrlRow label="Transaction update" value={withToken(updateUrl)} copied={copied === 'tupd'} onCopy={() => copy(withToken(updateUrl), 'tupd')} />
+              </div>
+            ) : null}
           </section>
 
           <section className="panel webhook-panel webhook-example">
