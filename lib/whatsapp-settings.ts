@@ -68,8 +68,8 @@ export async function listTenantWhatsApp(tenantId: string = getCurrentTenantId()
 }
 
 /** Send a real template message to a number, to prove the account's key works. */
-export async function sendTestMessage(role: string, phone: string): Promise<{ ok: boolean; error?: string }> {
-  const wa = await getTenantWhatsApp(role);
+export async function sendTestMessage(role: string, phone: string, tenantId: string = getCurrentTenantId()): Promise<{ ok: boolean; error?: string }> {
+  const wa = await getTenantWhatsApp(role, tenantId);
   if (!wa.apiKey) return { ok: false, error: 'No API key set for this account' };
   const templateName = Object.values(wa.templates)[0];
   if (!templateName) return { ok: false, error: 'Add at least one template first' };
