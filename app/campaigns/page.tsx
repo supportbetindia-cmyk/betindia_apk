@@ -4,6 +4,8 @@ import { logout } from '@/lib/logout';
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Sidebar } from '@/components/Sidebar';
+import { useMasterFilter } from '@/components/MasterFilterProvider';
+import { withMaster } from '@/lib/master-filter';
 import { parseUsersCsv, type ParsedUser } from '@/lib/user-file';
 
 type CampaignLogRow = {
@@ -36,6 +38,7 @@ type SendResult = { ok: boolean; audience: string; eligible: number; attempted: 
 type Audience = 'winback' | 'first_deposit';
 
 export default function CampaignsPage() {
+  const { masterId } = useMasterFilter();
   const router = useRouter();
   const [users, setUsers] = useState<ParsedUser[]>([]);
   const [fileName, setFileName] = useState('');
@@ -60,19 +63,19 @@ export default function CampaignsPage() {
     try {
       const params = new URLSearchParams({ status });
       if (q.trim()) params.set('q', q.trim());
-      const res = await fetch(`/api/reengagement/log?${params.toString()}`, { cache: 'no-store' });
+      const res = await fetch(withMaster(`/api/reengagement/log?${params.toString()}`, masterId), { cache: 'no-store' });
       const body = await res.json() as { ok: boolean; rows: CampaignLogRow[] };
       if (body.ok) setLogRows(body.rows);
     } catch { /* ignore */ }
-  }, []);
+  }, [masterId]);
 
   const loadSummary = useCallback(async () => {
     try {
-      const res = await fetch('/api/reengagement/summary', { cache: 'no-store' });
+      const res = await fetch(withMaster('/api/reengagement/summary', masterId), { cache: 'no-store' });
       const body = await res.json() as { ok: boolean; days: DaySummary[] };
       if (body.ok) setSummary(body.days);
     } catch { /* ignore */ }
-  }, []);
+  }, [masterId]);
 
   // Debounced: refetch the list when the filter or search changes.
   useEffect(() => {
@@ -100,7 +103,7 @@ export default function CampaignsPage() {
     if (users.length === 0) return;
     setBusy(true); setError(null); setResult(null);
     try {
-      const res = await fetch('/api/reengagement/preview', {
+      const res = await fetch(withMaster('/api/reengagement/preview', masterId), {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ users }),
       });
@@ -110,7 +113,7 @@ export default function CampaignsPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally { setBusy(false); }
-  }, [users]);
+  }, [users, masterId]);
 
   const runSend = useCallback(async () => {
     if (!preview) return;
@@ -122,7 +125,7 @@ export default function CampaignsPage() {
 
     setBusy(true); setError(null); setResult(null);
     try {
-      const res = await fetch('/api/reengagement/send', {
+      const res = await fetch(withMaster('/api/reengagement/send', masterId), {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ users, audience, limit }),
       });
@@ -135,7 +138,7 @@ export default function CampaignsPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally { setBusy(false); }
-  }, [preview, audience, limit, users, runPreview, loadLog, logFilter, search, loadSummary]);
+  }, [preview, audience, limit, users, masterId, runPreview, loadLog, logFilter, search, loadSummary]);
 
   // Upload → auto-send BOTH audiences in one click (imports to DB, then sends in bg).
   const runImportAndSend = useCallback(async () => {
@@ -149,7 +152,7 @@ export default function CampaignsPage() {
 
     setBusy(true); setError(null); setResult(null); setAutoMsg(null);
     try {
-      const res = await fetch('/api/reengagement/import-and-send', {
+      const res = await fetch(withMaster('/api/reengagement/import-and-send', masterId), {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ users }),
       });
@@ -160,7 +163,7 @@ export default function CampaignsPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally { setBusy(false); }
-  }, [users, preview, loadLog, logFilter, search, loadSummary]);
+  }, [users, preview, masterId, loadLog, logFilter, search, loadSummary]);
 
   const c = preview?.counts;
 

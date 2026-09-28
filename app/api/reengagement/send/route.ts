@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { sendCampaign, campaignConfigured, type Audience } from '@/lib/campaign-sender';
 import type { UserInput } from '@/lib/reengagement';
+import { getRequestTenantId } from '@/lib/tenant-server';
+import { parseMasterId } from '@/lib/master-filter';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -13,6 +15,8 @@ export async function POST(req: Request) {
   }
   try {
     const body = await req.json() as { users?: UserInput[]; audience?: string; limit?: number };
+    const masterId = parseMasterId(new URL(req.url).searchParams);
+    const tenantId = await getRequestTenantId();
     const users = Array.isArray(body.users) ? body.users : [];
     const audience = body.audience;
     if (users.length === 0) {
@@ -23,7 +27,8 @@ export async function POST(req: Request) {
     }
     // Cap per request so one click can't run for minutes; use the CLI for big blasts.
     const limit = Math.min(Math.max(1, Number(body.limit) || 20), 200);
-    const result = await sendCampaign(users, audience as Audience, limit);
+    const scopedUsers = masterId ? users.filter((user) => user.branch_id === masterId) : users;
+    const result = await sendCampaign(scopedUsers, audience as Audience, limit, tenantId, masterId);
     return NextResponse.json({ ok: true, ...result });
   } catch (err) {
     return NextResponse.json({ ok: false, error: err instanceof Error ? err.message : String(err) }, { status: 500 });

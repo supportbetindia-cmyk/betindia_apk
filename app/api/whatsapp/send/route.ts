@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { interaktConfigured, sendWhatsAppTemplate } from '@/lib/interakt';
 import { getSegments, type SegmentKey } from '@/lib/segments';
+import { getRequestTenantId, requestErrorStatus } from '@/lib/tenant-server';
+import { parseMasterId } from '@/lib/master-filter';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,10 +29,17 @@ export async function POST(req: Request) {
     phone?: string;
     countryCode?: string;
   };
+  let masterId: string | undefined;
+  let tenantId: string;
   try {
     body = await req.json();
-  } catch {
-    return NextResponse.json({ error: 'invalid JSON' }, { status: 400 });
+    masterId = parseMasterId(new URL(req.url).searchParams);
+    tenantId = await getRequestTenantId();
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'invalid JSON' },
+      { status: requestErrorStatus(error) },
+    );
   }
 
   const templateName = (body.templateName ?? '').trim();
@@ -41,7 +50,7 @@ export async function POST(req: Request) {
   if (body.phone) {
     targets = [{ mobile: body.phone.trim(), name: null }];
   } else if (body.segment) {
-    const segments = await getSegments();
+    const segments = await getSegments(undefined, tenantId, masterId);
     const seg = segments.find((s) => s.key === body.segment);
     if (!seg) return NextResponse.json({ error: 'unknown segment' }, { status: 400 });
     targets = seg.users

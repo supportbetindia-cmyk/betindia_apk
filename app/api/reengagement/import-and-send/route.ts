@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { importUsers, sendBoth, campaignConfigured } from '@/lib/campaign-sender';
 import type { UserInput } from '@/lib/reengagement';
+import { getRequestTenantId } from '@/lib/tenant-server';
+import { parseMasterId } from '@/lib/master-filter';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -13,16 +15,19 @@ export async function POST(req: Request) {
   }
   try {
     const body = await req.json() as { users?: UserInput[] };
+    const masterId = parseMasterId(new URL(req.url).searchParams);
+    const tenantId = await getRequestTenantId();
     const users = Array.isArray(body.users) ? body.users : [];
     if (users.length === 0) {
       return NextResponse.json({ ok: false, error: 'No users provided' }, { status: 400 });
     }
 
-    const imported = await importUsers(users); // persist first (awaited)
+    const scopedUsers = masterId ? users.filter((user) => user.branch_id === masterId) : users;
+    const imported = await importUsers(scopedUsers, tenantId); // persist first (awaited)
 
     // Fire-and-forget: sending both audiences takes minutes; the always-on Node
     // process finishes while we return immediately. Results show on the Campaigns page.
-    void sendBoth(users)
+    void sendBoth(scopedUsers, tenantId, masterId)
       .then((r) => console.log('[import-and-send] done', JSON.stringify(r)))
       .catch((err) => console.error('[import-and-send] failed', err));
 

@@ -4,12 +4,15 @@ import { logout } from '@/lib/logout';
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Sidebar } from '@/components/Sidebar';
+import { useMasterFilter } from '@/components/MasterFilterProvider';
+import { withMaster } from '@/lib/master-filter';
 import { LogOut } from 'lucide-react';
 
 type SegUser = { key: string; userName: string | null; mobile: string | null; depositTotal: number; depositCount: number };
 type Segment = { key: string; label: string; count: number; users: SegUser[] };
 
 export default function WhatsAppPage() {
+  const { masterId } = useMasterFilter();
   const router = useRouter();
   const [segments, setSegments] = useState<Segment[]>([]);
   const [segError, setSegError] = useState<string | null>(null);
@@ -29,14 +32,14 @@ export default function WhatsAppPage() {
 
   const loadSegments = useCallback(async () => {
     try {
-      const res = await fetch('/api/segments', { cache: 'no-store' });
+      const res = await fetch(withMaster('/api/segments', masterId), { cache: 'no-store' });
       const body = await res.json();
       if (body.error) setSegError(body.error);
       setSegments(body.segments ?? []);
     } catch (e) {
       setSegError(e instanceof Error ? e.message : String(e));
     }
-  }, []);
+  }, [masterId]);
 
   useEffect(() => {
     loadSegments();
@@ -49,7 +52,7 @@ export default function WhatsAppPage() {
     setSending(true);
     setResult(null);
     try {
-      const res = await fetch('/api/whatsapp/send', {
+      const res = await fetch(withMaster('/api/whatsapp/send', masterId), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

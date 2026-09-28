@@ -1,5 +1,9 @@
 // Re-engagement engine, layer 1: classify each user and pick their audience.
 //
+// Kept local so this pure data layer can also be imported by the Node test
+// runner without relying on Next's extensionless module resolution.
+const DEFAULT_TENANT_ID = process.env.DEFAULT_TENANT_ID || 'b6e68fb7-ca2e-49be-b1e5-74601e59a041';
+const getCurrentTenantId = () => DEFAULT_TENANT_ID;
 // Two audiences:
 //   - lapsed depositors  -> "win-back"      (they played, then went quiet)
 //   - never-deposited     -> "first-deposit" (registered, never converted)
@@ -113,8 +117,9 @@ type TxnLite = { user_id: string | null; type: string | null; created_at: string
 type TxnAgg = { last_txn_at: string; deposits_count: number };
 
 /** Reduce all transactions to per-user { last_txn_at, deposits_count } in memory. */
-async function fetchTransactionAggregate(): Promise<Map<string, TxnAgg>> {
-  const rows = await fetchAllRows<TxnLite>('transactions?select=user_id,type,created_at');
+async function fetchTransactionAggregate(tenantId: string, masterId?: string): Promise<Map<string, TxnAgg>> {
+  const master = masterId ? `&branch_id=eq.${encodeURIComponent(masterId)}` : '';
+  const rows = await fetchAllRows<TxnLite>(`transactions?select=user_id,type,created_at&tenant_id=eq.${encodeURIComponent(tenantId)}${master}`);
   const map = new Map<string, TxnAgg>();
   for (const r of rows) {
     if (!r.user_id) continue;
@@ -131,12 +136,12 @@ async function fetchTransactionAggregate(): Promise<Map<string, TxnAgg>> {
 }
 
 /** Users already messaged by a campaign inside the cooldown window. */
-async function fetchRecentlyMessaged(cooldownDays: number): Promise<Set<string>> {
+async function fetchRecentlyMessaged(cooldownDays: number, tenantId: string): Promise<Set<string>> {
   const since = new Date(Date.now() - cooldownDays * 86_400_000).toISOString();
   // Only SUCCESSFUL sends put a user on cooldown. Failed ones (e.g. WhatsApp
   // 131049 marketing cap) stay eligible so the next run retries them.
   const rows = await fetchAllRows<{ user_id: string | null }>(
-    `message_log?select=user_id&event_type=in.(winback,first_deposit)&status=eq.sent&created_at=gte.${since}`,
+    `message_log?select=user_id&tenant_id=eq.${encodeURIComponent(tenantId)}&event_type=in.(winback,first_deposit)&status=eq.sent&created_at=gte.${since}`,
   );
   return new Set(rows.map((r) => r.user_id).filter((id): id is string => Boolean(id)));
 }
@@ -181,8 +186,8 @@ export type ReengagementSegment = {
 };
 
 /** Read the user master list from a Supabase `users` table (for when it exists). */
-export async function fetchUsersFromTable(): Promise<UserInput[]> {
-  return fetchAllRows<UserInput>('users?select=user_id,branch_id,mobile,name,language,register_date');
+export async function fetchUsersFromTable(tenantId = getCurrentTenantId()): Promise<UserInput[]> {
+  return fetchAllRows<UserInput>(`users?select=user_id,branch_id,mobile,name,language,register_date&tenant_id=eq.${encodeURIComponent(tenantId)}`);
 }
 
 /** Build both campaign audiences. `users` comes from wherever you have them —
@@ -192,10 +197,12 @@ export async function buildReengagementSegment(
   users: UserInput[],
   config: CampaignConfig = DEFAULT_CAMPAIGN_CONFIG,
   now: number = Date.now(),
+  tenantId = getCurrentTenantId(),
+  masterId?: string,
 ): Promise<ReengagementSegment> {
   const [txnAgg, cooldown] = await Promise.all([
-    fetchTransactionAggregate(),
-    fetchRecentlyMessaged(config.cooldownDays),
+    fetchTransactionAggregate(tenantId, masterId),
+    fetchRecentlyMessaged(config.cooldownDays, tenantId),
   ]);
 
   const winback: Candidate[] = [];

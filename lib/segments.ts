@@ -1,4 +1,5 @@
 import { fetchTransactions, type TransactionRow } from './wati';
+import { getCurrentTenantId } from './tenant';
 
 // Customer-intelligence segmentation. Built from the transactions table because
 // that's where phone numbers live (WhatsApp needs a number to message). Each
@@ -101,7 +102,8 @@ export function computeSegments(txns: TransactionRow[], opts: SegmentOptions = {
 }
 
 /** Fetch transactions and compute segments in one call (for API routes). */
-export async function getSegments(opts?: SegmentOptions): Promise<Segment[]> {
-  const txns = await fetchTransactions(2000);
-  return computeSegments(txns, opts);
+export async function getSegments(opts?: SegmentOptions, tenantId = getCurrentTenantId(), masterId?: string): Promise<Segment[]> {
+  const txns = await fetchTransactions(2000, tenantId);
+  const scoped = masterId ? txns.filter((txn) => txn.branch_id === masterId) : txns;
+  return computeSegments(scoped, opts);
 }

@@ -66,10 +66,26 @@ export type CampaignLogRow = {
   created_at: string;
 };
 
+/** Resolve the user IDs assigned to a Master so campaign history can be scoped
+ * without requiring a schema change to the existing message_log table. */
+async function fetchMasterUserIds(tenantId: string, masterId?: string): Promise<string[] | null> {
+  if (!masterId) return null;
+  const rows = await fetchAll<{ user_id: string }>(
+    `users?select=user_id&tenant_id=eq.${encodeURIComponent(tenantId)}&branch_id=eq.${encodeURIComponent(masterId)}`,
+  );
+  return rows.map((row) => row.user_id).filter(Boolean);
+}
+
+function inFilter(values: string[]): string {
+  return `in.(${values.map((value) => value.replace(/[(),]/g, '')).join(',')})`;
+}
+
 /** Recent campaign sends (win-back + first-deposit), filtered by status and/or a
  * user search (matches User_ID or mobile). */
-export async function fetchCampaignLog(status = 'all', limit = 200, q = '', tenantId: string = getCurrentTenantId()): Promise<CampaignLogRow[]> {
+export async function fetchCampaignLog(status = 'all', limit = 200, q = '', tenantId: string = getCurrentTenantId(), masterId?: string): Promise<CampaignLogRow[]> {
   if (!SUPABASE_URL || !SERVICE_ROLE) return [];
+  const masterUsers = await fetchMasterUserIds(tenantId, masterId);
+  if (masterUsers && masterUsers.length === 0) return [];
   const params = new URLSearchParams({
     select: 'id,user_id,mobile,event_type,template,status,detail,last_error,created_at',
     event_type: 'in.(winback,first_deposit)',
@@ -77,6 +93,7 @@ export async function fetchCampaignLog(status = 'all', limit = 200, q = '', tena
     order: 'created_at.desc',
     limit: String(limit),
   });
+  if (masterUsers) params.set('user_id', inFilter(masterUsers));
   if (status && status !== 'all') params.set('status', `eq.${status}`);
   const safe = q.replace(/[%,()*]/g, '').trim(); // strip PostgREST special chars
   if (safe) params.set('or', `(user_id.ilike.*${safe}*,mobile.ilike.*${safe}*)`);
@@ -88,8 +105,10 @@ export async function fetchCampaignLog(status = 'all', limit = 200, q = '', tena
 export type DaySummary = { date: string; sent: number; failed: number; skipped: number; total: number };
 
 /** Per-day sent/failed/skipped totals for campaign messages over the last N days. */
-export async function fetchCampaignSummary(days = 14, tenantId: string = getCurrentTenantId()): Promise<DaySummary[]> {
+export async function fetchCampaignSummary(days = 14, tenantId: string = getCurrentTenantId(), masterId?: string): Promise<DaySummary[]> {
   if (!SUPABASE_URL || !SERVICE_ROLE) return [];
+  const masterUsers = await fetchMasterUserIds(tenantId, masterId);
+  if (masterUsers && masterUsers.length === 0) return [];
   const since = new Date(Date.now() - days * 86_400_000).toISOString();
   const params = new URLSearchParams({
     select: 'status,created_at',
@@ -99,6 +118,7 @@ export async function fetchCampaignSummary(days = 14, tenantId: string = getCurr
     order: 'created_at.desc',
     limit: '10000',
   });
+  if (masterUsers) params.set('user_id', inFilter(masterUsers));
   const res = await fetch(`${SUPABASE_URL}/rest/v1/message_log?${params.toString()}`, { headers: sbHeaders(), cache: 'no-store' });
   if (!res.ok) return [];
   const rows = await res.json() as Array<{ status: string | null; created_at: string }>;
@@ -115,8 +135,8 @@ export async function fetchCampaignSummary(days = 14, tenantId: string = getCurr
   return [...byDay.values()].sort((a, b) => b.date.localeCompare(a.date));
 }
 
-export async function previewCampaign(users: UserInput[]): Promise<ReengagementSegment> {
-  return buildReengagementSegment(users, DEFAULT_CAMPAIGN_CONFIG);
+export async function previewCampaign(users: UserInput[], tenantId = getCurrentTenantId(), masterId?: string): Promise<ReengagementSegment> {
+  return buildReengagementSegment(users, DEFAULT_CAMPAIGN_CONFIG, Date.now(), tenantId, masterId);
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -200,11 +220,11 @@ async function sendCandidates(pool: Candidate[], limit: number, tenantId = getCu
 }
 
 /** Send a campaign to up to `limit` users of one audience. */
-export async function sendCampaign(users: UserInput[], audience: Audience, limit: number): Promise<SendResult> {
+export async function sendCampaign(users: UserInput[], audience: Audience, limit: number, tenantId = getCurrentTenantId(), masterId?: string): Promise<SendResult> {
   if (!INTERAKT_KEY) throw new Error('INTERAKT_CAMPAIGN_API_KEY is not set on the server');
-  const seg = await buildReengagementSegment(users, DEFAULT_CAMPAIGN_CONFIG);
+  const seg = await buildReengagementSegment(users, DEFAULT_CAMPAIGN_CONFIG, Date.now(), tenantId, masterId);
   const pool = audience === 'first_deposit' ? seg.firstDeposit : seg.winback;
-  return sendCandidates(pool, limit);
+  return sendCandidates(pool, limit, tenantId);
 }
 
 // ---------------------------------------------------------------------------
@@ -327,23 +347,23 @@ export async function runDailyCampaigns(): Promise<DailyCampaignResult> {
   if (!(await isCampaignsEnabled())) return { ran: false, reason: 'campaigns disabled' };
   if (!campaignConfigured()) return { ran: false, reason: 'INTERAKT_CAMPAIGN_API_KEY not set' };
 
-  const users = await fetchUsersFromTable();
+  const tenantId = getCurrentTenantId();
+  const users = await fetchUsersFromTable(tenantId);
   if (users.length === 0) return { ran: false, reason: 'no users in the users table' };
 
   // Win-back targets dormant DEPOSITORS from the CRM report + webhook (source of
   // truth), so it reaches everyone who ever deposited — not just webhook-era lapses.
-  const winback = await sendDormantWinback(WINBACK_DAILY);
+  const winback = await sendDormantWinback(WINBACK_DAILY, DEFAULT_DORMANT_CONFIG, tenantId);
   // "Other users": registered but never deposited -> first-deposit nudge.
-  const firstDeposit = await sendCampaign(users, 'first_deposit', FIRST_DEPOSIT_DAILY);
+  const firstDeposit = await sendCampaign(users, 'first_deposit', FIRST_DEPOSIT_DAILY, tenantId);
   return { ran: true, winback, firstDeposit };
 }
 
 /** Persist an uploaded user list into the `users` table (idempotent upsert). */
-export async function importUsers(users: UserInput[]): Promise<number> {
+export async function importUsers(users: UserInput[], tenantId = getCurrentTenantId()): Promise<number> {
   if (!SUPABASE_URL || !SERVICE_ROLE) throw new Error('Supabase not configured');
   let count = 0;
   for (let i = 0; i < users.length; i += 500) {
-    const tenant = getCurrentTenantId();
     const batch = users.slice(i, i + 500).map((u) => ({
       user_id: u.user_id,
       branch_id: u.branch_id ?? null,
@@ -351,7 +371,7 @@ export async function importUsers(users: UserInput[]): Promise<number> {
       name: u.name ?? null,
       language: u.language ?? null,
       register_date: u.register_date ?? null,
-      tenant_id: tenant,
+      tenant_id: tenantId,
       updated_at: new Date().toISOString(),
     }));
     const res = await fetch(`${SUPABASE_URL}/rest/v1/users?on_conflict=user_id`, {
@@ -366,9 +386,9 @@ export async function importUsers(users: UserInput[]): Promise<number> {
 }
 
 /** Send BOTH audiences (win-back + first-deposit) in capped batches. */
-export async function sendBoth(users: UserInput[]): Promise<DailyCampaignResult> {
+export async function sendBoth(users: UserInput[], tenantId = getCurrentTenantId(), masterId?: string): Promise<DailyCampaignResult> {
   if (!campaignConfigured()) return { ran: false, reason: 'INTERAKT_CAMPAIGN_API_KEY not set' };
-  const winback = await sendCampaign(users, 'winback', WINBACK_DAILY);
-  const firstDeposit = await sendCampaign(users, 'first_deposit', FIRST_DEPOSIT_DAILY);
+  const winback = await sendCampaign(users, 'winback', WINBACK_DAILY, tenantId, masterId);
+  const firstDeposit = await sendCampaign(users, 'first_deposit', FIRST_DEPOSIT_DAILY, tenantId, masterId);
   return { ran: true, winback, firstDeposit };
 }
