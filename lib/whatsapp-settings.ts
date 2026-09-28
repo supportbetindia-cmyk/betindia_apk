@@ -67,19 +67,31 @@ export async function listTenantWhatsApp(tenantId: string = getCurrentTenantId()
   }));
 }
 
+// N generic placeholder values for a test send. Interakt needs EXACTLY the count
+// the template defines, so the caller resends with the right N when it learns it.
+function testValues(n: number): string[] {
+  const base = ['Test', 'TEST123', '100', 'INR', 'TXN123', new Date().toLocaleDateString('en-IN'), '12:00 PM', 'Not specified'];
+  return Array.from({ length: Math.max(0, n) }, (_, i) => base[i] ?? 'Test');
+}
+
 /** Send a real template message to a number, to prove the account's key works. */
 export async function sendTestMessage(role: string, phone: string, tenantId: string = getCurrentTenantId()): Promise<{ ok: boolean; error?: string }> {
   const wa = await getTenantWhatsApp(role, tenantId);
   if (!wa.apiKey) return { ok: false, error: 'No API key set for this account' };
   const templateName = Object.values(wa.templates)[0];
   if (!templateName) return { ok: false, error: 'Add at least one template first' };
-  return sendWhatsAppTemplate({
-    phoneNumber: phone.replace(/\D/g, '').slice(-10),
-    countryCode: '+91',
-    templateName,
-    // Generous placeholder set so any 1–8 variable template fills in.
-    bodyValues: ['Test', 'TEST123', '100', 'INR', 'TXN123', new Date().toLocaleDateString('en-IN'), '12:00 PM'],
-  }, wa.apiKey);
+  const phoneNumber = phone.replace(/\D/g, '').slice(-10);
+  const send = (n: number) => sendWhatsAppTemplate({ phoneNumber, countryCode: '+91', templateName, bodyValues: testValues(n) }, wa.apiKey);
+
+  // Guess 7 (our transaction templates), then read the exact count Interakt wants
+  // from its own error and retry once. A count mismatch is rejected before sending,
+  // so the first failed try never delivers a message.
+  let res = await send(7);
+  if (!res.ok) {
+    const wanted = /expected number of values are (\d+)/i.exec(res.error ?? '');
+    if (wanted) res = await send(Number(wanted[1]));
+  }
+  return res;
 }
 
 /** Create or update one account (by role). Send apiKey only when changing it. */
