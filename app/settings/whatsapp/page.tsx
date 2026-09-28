@@ -13,9 +13,29 @@ type Account = {
 };
 type Row = { name: string; value: string; fixed: boolean };
 
-// The 6 template names the deposit/withdrawal automation looks up — locked on the
-// 'updates' account so they can't be renamed by accident.
-const UPDATES_KEYS = ['deposit_approved', 'deposit_pending', 'deposit_rejected', 'withdrawal_approved', 'withdrawal_pending', 'withdrawal_rejected'];
+// The 6 template keys the deposit/withdrawal automation looks up (backend reads
+// templates[`${type}_${outcome}`]). Locked on EVERY transaction account so they can
+// never be mis-named — that mismatch silently falls back to the wrong template.
+const UPDATES_KEYS = ['deposit_pending', 'deposit_approved', 'deposit_rejected', 'withdrawal_pending', 'withdrawal_approved', 'withdrawal_rejected'];
+
+// Plain-English label for each locked key, shown instead of the raw key.
+const TXN_LABELS: Record<string, string> = {
+  deposit_pending: 'Deposit received (pending)',
+  deposit_approved: 'Deposit approved',
+  deposit_rejected: 'Deposit rejected',
+  withdrawal_pending: 'Withdrawal received (pending)',
+  withdrawal_approved: 'Withdrawal approved',
+  withdrawal_rejected: 'Withdrawal rejected',
+};
+
+// An account is either a CAMPAIGN account (retention / win-back / marketing) or a
+// TRANSACTION account (deposit/withdrawal updates — the default). We key off the job
+// name loosely so a custom name like "transaction" still gets the locked 6 rows.
+const isCampaignRole = (role: string) => /retention|camp/i.test(role);
+const isTransactionAccount = (role: string) => !isCampaignRole(role);
+
+// Does a transaction account have all 6 templates filled in? (Empty = it will fail.)
+const txnTemplatesComplete = (a: Account) => UPDATES_KEYS.every((k) => (a.templates[k] ?? '').trim() !== '');
 
 // Plain-English description of what each known account is used for.
 const ROLE_INFO: Record<string, { title: string; purpose: string }> = {
@@ -70,8 +90,12 @@ export default function WhatsAppSettingsPage() {
   }
 
   // The two accounts that drive automation — surfaced at the top so the user sees
-  // at a glance whether their most important messages will actually send.
-  const key = (r: string) => accounts?.find((a) => a.role === r);
+  // at a glance whether their most important messages will actually send. We find
+  // them by KIND (not a literal role name), preferring the conventional 'updates'.
+  const txnAccount = accounts
+    ?.filter((a) => isTransactionAccount(a.role))
+    .sort((a, b) => Number(b.role === 'updates') - Number(a.role === 'updates'))[0];
+  const campaignAccount = accounts?.find((a) => isCampaignRole(a.role));
 
   return (
     <div className="shell">
@@ -89,8 +113,9 @@ export default function WhatsAppSettingsPage() {
           <div className="panel">
             <div style={{ fontWeight: 700, marginBottom: 10 }}>How your messages are sent right now</div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>
-              <OverviewTile title="Deposit / withdrawal updates" account={key('updates')} missing="No 'updates' account yet" />
-              <OverviewTile title="Win-back & campaigns" account={key('retention')} missing="No 'retention' account yet" />
+              <OverviewTile title="Deposit / withdrawal updates" account={txnAccount} missing="No transaction account yet"
+                warn={txnAccount && !txnTemplatesComplete(txnAccount) ? 'Some templates are empty — those messages won’t send' : undefined} />
+              <OverviewTile title="Win-back & campaigns" account={campaignAccount} missing="No campaign (retention) account yet" />
             </div>
           </div>
 
@@ -117,7 +142,7 @@ export default function WhatsAppSettingsPage() {
   );
 }
 
-function OverviewTile({ title, account, missing }: { title: string; account?: Account; missing: string }) {
+function OverviewTile({ title, account, missing, warn }: { title: string; account?: Account; missing: string; warn?: string }) {
   const status = account ? statusOf(account) : null;
   return (
     <div style={{ border: '1px solid #eef2f7', borderRadius: 12, padding: 14 }}>
@@ -132,14 +157,18 @@ function OverviewTile({ title, account, missing }: { title: string; account?: Ac
           <XCircle size={18} /> <b>{missing}</b>
         </div>
       )}
+      {warn ? <div style={{ marginTop: 6, fontSize: 12, color: '#b45309' }}>⚠ {warn}</div> : null}
     </div>
   );
 }
 
 function toRows(account: Account): Row[] {
-  return Object.entries(account.templates).map(([name, value]) => ({
-    name, value, fixed: account.role === 'updates' && UPDATES_KEYS.includes(name),
-  }));
+  // Transaction accounts ALWAYS show the 6 locked canonical rows (seeded from any
+  // saved values) so the automation can find them. Campaign accounts stay free-form.
+  if (isTransactionAccount(account.role)) {
+    return UPDATES_KEYS.map((name) => ({ name, value: account.templates[name] ?? '', fixed: true }));
+  }
+  return Object.entries(account.templates).map(([name, value]) => ({ name, value, fixed: false }));
 }
 
 function AccountCard({ account, onSaved, onRemoved }: { account: Account; onSaved: (a: Account[]) => void; onRemoved: (a: Account[]) => void }) {
@@ -153,7 +182,8 @@ function AccountCard({ account, onSaved, onRemoved }: { account: Account; onSave
   const [testing, setTesting] = useState(false);
   const [testMsg, setTestMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const status = statusOf(account);
-  const info = roleInfo(account.role);
+  const isTransaction = isTransactionAccount(account.role);
+  const info = isTransaction ? ROLE_INFO.updates : roleInfo(account.role);
 
   async function runTest() {
     if (!testPhone.trim()) return;
@@ -177,7 +207,7 @@ function AccountCard({ account, onSaved, onRemoved }: { account: Account; onSave
   async function submit() {
     setSaving(true); setMsg(null);
     const templates: Record<string, string> = {};
-    for (const row of rows) if (row.name.trim()) templates[row.name.trim()] = row.value.trim();
+    for (const row of rows) if (row.name.trim() && row.value.trim()) templates[row.name.trim()] = row.value.trim();
     try {
       onSaved(await save({ role: account.role, label, enabled, apiKey: newKey || undefined, templates }));
       setNewKey(''); setMsg('Saved.');
@@ -227,14 +257,18 @@ function AccountCard({ account, onSaved, onRemoved }: { account: Account; onSave
       <div style={{ marginTop: 16 }}>
         <div style={{ fontWeight: 700, marginBottom: 2 }}>Message templates</div>
         <p className="page-sub" style={{ marginTop: 0, marginBottom: 8 }}>
-          {account.role === 'updates'
-            ? 'These 6 names must match your approved Interakt templates for deposit/withdrawal updates.'
+          {isTransaction
+            ? 'For each event on the left, paste the exact approved Interakt template name on the right. All 6 are required for deposit/withdrawal updates to send.'
             : 'Give each message a short name on the left, and the exact Interakt template name on the right.'}
         </p>
         <div style={{ display: 'grid', gap: 8 }}>
           {rows.map((row, i) => (
             <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <Input value={row.name} disabled={row.fixed} onChange={(e) => setRow(i, { name: e.target.value })} placeholder="name (e.g. welcome)" style={{ width: 240 }} />
+              {row.fixed ? (
+                <div style={{ width: 240, fontSize: 13, color: '#334155', fontWeight: 600 }}>{TXN_LABELS[row.name] ?? row.name}</div>
+              ) : (
+                <Input value={row.name} onChange={(e) => setRow(i, { name: e.target.value })} placeholder="name (e.g. welcome)" style={{ width: 240 }} />
+              )}
               <span style={{ color: '#94a3b8' }}>→</span>
               <Input value={row.value} onChange={(e) => setRow(i, { value: e.target.value })} placeholder="Interakt template name" style={{ flex: 1 }} />
               {row.fixed ? <span style={{ width: 32 }} /> : (
@@ -243,7 +277,7 @@ function AccountCard({ account, onSaved, onRemoved }: { account: Account; onSave
             </div>
           ))}
         </div>
-        <Button variant="outline" onClick={addRow} style={{ marginTop: 8 }}><Plus size={15} /> Add template</Button>
+        {isTransaction ? null : <Button variant="outline" onClick={addRow} style={{ marginTop: 8 }}><Plus size={15} /> Add template</Button>}
       </div>
 
       <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid #eef2f7' }}>
