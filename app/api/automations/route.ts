@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
 import { interaktConfigured } from '@/lib/interakt';
 import { getAllToggles } from '@/lib/settings';
 import { getQueueHealth } from '@/lib/automations';
+import { DEFAULT_TENANT_ID } from '@/lib/tenant';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -14,9 +16,10 @@ const RULES = [
   { event: 'Withdrawal received', template: 'betindia_withdrawal_status_update', trigger: 'auto WhatsApp' },
 ];
 
-async function fetchLog() {
+async function fetchLog(tenantId: string) {
   if (!SUPABASE_URL || !SERVICE_ROLE) return { logs: [], needsSetup: false };
-  const url = `${SUPABASE_URL}/rest/v1/message_log?select=*&order=created_at.desc&limit=50`;
+  // Scope to the selected company so each tenant sees only its own messages.
+  const url = `${SUPABASE_URL}/rest/v1/message_log?tenant_id=eq.${tenantId}&select=*&order=created_at.desc&limit=50`;
   const res = await fetch(url, {
     headers: { apikey: SERVICE_ROLE, Authorization: `Bearer ${SERVICE_ROLE}` },
     cache: 'no-store',
@@ -30,8 +33,9 @@ async function fetchLog() {
 }
 
 export async function GET() {
+  const tenantId = (await cookies()).get('ci_selected_tenant_id')?.value || DEFAULT_TENANT_ID;
   const [{ logs, needsSetup }, toggles, health] = await Promise.all([
-    fetchLog(),
+    fetchLog(tenantId),
     getAllToggles(),
     getQueueHealth(),
   ]);
