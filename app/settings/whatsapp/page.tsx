@@ -28,6 +28,16 @@ const TXN_LABELS: Record<string, string> = {
   withdrawal_rejected: 'Withdrawal rejected',
 };
 
+// The campaign account's known template keys — locked + labelled so the automation
+// (win-back to inactive players) and campaigns can always find them by name.
+const CAMPAIGN_KEYS = ['winback', 'first_deposit'];
+const CAMPAIGN_LABELS: Record<string, string> = {
+  winback: 'Win-back (inactive players)',
+  first_deposit: 'First deposit (never deposited)',
+};
+// One label lookup for every fixed row (transaction + campaign).
+const LABELS: Record<string, string> = { ...TXN_LABELS, ...CAMPAIGN_LABELS };
+
 // An account is either a CAMPAIGN account (retention / win-back / marketing) or a
 // TRANSACTION account (deposit/withdrawal updates — the default). We key off the job
 // name loosely so a custom name like "transaction" still gets the locked 6 rows.
@@ -163,12 +173,17 @@ function OverviewTile({ title, account, missing, warn }: { title: string; accoun
 }
 
 function toRows(account: Account): Row[] {
-  // Transaction accounts ALWAYS show the 6 locked canonical rows (seeded from any
-  // saved values) so the automation can find them. Campaign accounts stay free-form.
+  // Transaction accounts ALWAYS show the 6 locked canonical rows (seeded from saved
+  // values) so the automation can find them.
   if (isTransactionAccount(account.role)) {
     return UPDATES_KEYS.map((name) => ({ name, value: account.templates[name] ?? '', fixed: true }));
   }
-  return Object.entries(account.templates).map(([name, value]) => ({ name, value, fixed: false }));
+  // Campaign accounts: the 2 known keys locked + any extra custom templates free-form.
+  const fixedRows = CAMPAIGN_KEYS.map((name) => ({ name, value: account.templates[name] ?? '', fixed: true }));
+  const extraRows = Object.entries(account.templates)
+    .filter(([name]) => !CAMPAIGN_KEYS.includes(name))
+    .map(([name, value]) => ({ name, value, fixed: false }));
+  return [...fixedRows, ...extraRows];
 }
 
 function AccountCard({ account, onSaved, onRemoved }: { account: Account; onSaved: (a: Account[]) => void; onRemoved: (a: Account[]) => void }) {
@@ -259,13 +274,13 @@ function AccountCard({ account, onSaved, onRemoved }: { account: Account; onSave
         <p className="page-sub" style={{ marginTop: 0, marginBottom: 8 }}>
           {isTransaction
             ? 'For each event on the left, paste the exact approved Interakt template name on the right. All 6 are required for deposit/withdrawal updates to send.'
-            : 'Give each message a short name on the left, and the exact Interakt template name on the right.'}
+            : 'Paste your approved template names on the right. Win-back is sent automatically to inactive players; first-deposit nudges players who never deposited. Add other campaign templates below if you like.'}
         </p>
         <div style={{ display: 'grid', gap: 8 }}>
           {rows.map((row, i) => (
             <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               {row.fixed ? (
-                <div style={{ width: 240, fontSize: 13, color: '#334155', fontWeight: 600 }}>{TXN_LABELS[row.name] ?? row.name}</div>
+                <div style={{ width: 240, fontSize: 13, color: '#334155', fontWeight: 600 }}>{LABELS[row.name] ?? row.name}</div>
               ) : (
                 <Input value={row.name} onChange={(e) => setRow(i, { name: e.target.value })} placeholder="name (e.g. welcome)" style={{ width: 240 }} />
               )}

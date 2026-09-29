@@ -3,8 +3,9 @@ import { logout } from '@/lib/logout';
 
 import { useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Sidebar } from '@/components/Sidebar';
+import { backendRequest } from '@/lib/backend-api';
 
 type Rule = { event: string; template: string; trigger: string };
 type Toggles = {
@@ -91,6 +92,58 @@ function ToggleSwitch({ on, onChange, disabled, label }: {
         }}
       />
     </button>
+  );
+}
+
+// Auto-WhatsApp to inactive players (7–90 days quiet), once every 7 days. On/off is
+// the retention WhatsApp account's "On" switch; this panel shows reach + a manual run.
+function WinbackPanel() {
+  const qc = useQueryClient();
+  const preview = useQuery({
+    queryKey: ['winback-preview'],
+    queryFn: ({ signal }) => backendRequest<{ eligible: number; configured: boolean }>('/winback/preview', { signal }),
+    refetchInterval: 30_000,
+  });
+  const run = useMutation({
+    mutationFn: () => backendRequest<{ eligible: number; sent: number; failed: number; skipped: number; reason?: string }>('/winback/run', { method: 'POST' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['winback-preview'] }),
+  });
+  const d = preview.data;
+  const result = run.data;
+  const configured = d?.configured;
+
+  return (
+    <div className="panel">
+      <div className="panel-head"><h3>Inactive win-back</h3><span className="panel-tag">auto-WhatsApp</span></div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', padding: '6px 2px' }}>
+        <div>
+          <div style={{ fontWeight: 700, fontSize: 22, color: '#0f172a' }}>
+            {d ? d.eligible.toLocaleString() : '—'} <span style={{ fontSize: 14, fontWeight: 500, color: '#64748b' }}>inactive players ready</span>
+          </div>
+          <div className="kpi-vs" style={{ color: configured ? 'var(--green, #16a34a)' : '#b45309' }}>
+            {configured
+              ? 'ON — quiet 7–90 days · one message per player every 7 days · sends daily'
+              : 'OFF — add a retention WhatsApp account (with a win-back template) and turn it On'}
+          </div>
+        </div>
+        <button
+          className="logout-btn2"
+          style={{ background: configured ? 'var(--green, #16a34a)' : '#cbd5e1', color: '#fff' }}
+          disabled={!configured || run.isPending}
+          onClick={() => {
+            if (window.confirm(`Send the win-back WhatsApp now to eligible inactive players?\n\nRespects the 7-day cooldown, so already-messaged players are skipped.`)) run.mutate();
+          }}
+        >
+          {run.isPending ? 'Sending…' : 'Send win-back now'}
+        </button>
+      </div>
+      {run.error ? <div className="footer-note" style={{ color: '#b91c1c' }}>{run.error instanceof Error ? run.error.message : 'Failed to run'}</div> : null}
+      {result ? (
+        <div className="footer-note" style={{ color: 'var(--green, #16a34a)' }}>
+          {result.reason ? `Nothing sent — ${result.reason}.` : `Sent ${result.sent}, failed ${result.failed}, skipped ${result.skipped} (of ${result.eligible} eligible).`}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -321,6 +374,9 @@ export default function AutomationsPage() {
             ))}
           </div>
         </div>
+
+        {/* WIN-BACK */}
+        <WinbackPanel />
 
         {/* LOG */}
         <div className="panel">
