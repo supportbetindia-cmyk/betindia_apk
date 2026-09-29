@@ -145,7 +145,8 @@ function mapRow(record: Record<string, string>): ParsedUser | null {
     // Some report rows carry "0" as a placeholder name — treat it as no name.
     name: (() => { const n = field(record, /^name$/i); return n && n !== '0' ? n : null; })(),
     language: field(record, /^language$/i) || null,
-    register_date: parseDate(field(record, /^regist(ration|er)?[\s_]*date$/i, /^registered[\s_]*at$/i)),
+    // Also accept "Joined Date" / "Join Date" (and the "joned" export typo) as the sign-up date.
+    register_date: parseDate(field(record, /^regist(ration|er)?[\s_]*date$/i, /^registered[\s_]*at$/i, /^joi?ned?[\s_]*date$/i, /^joined[\s_]*(on|at)$/i)),
     raw: record,
     ...(isReport ? { report: reportFrom(record) } : {}),
   };
