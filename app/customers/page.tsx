@@ -76,6 +76,23 @@ function StageBadge({ value }: { value: string | null }) {
   return <span style={{ background: s.bg, color: s.fg, fontWeight: 600, fontSize: 12, padding: '2px 8px', borderRadius: 999, whiteSpace: 'nowrap' }}>{s.label}</span>;
 }
 
+// Live activity status from the last transaction (deposit OR withdrawal): a player
+// is Inactive once their most recent transaction is more than 7 days old.
+const INACTIVE_AFTER_DAYS = 7;
+function ActivityStatus({ lastDepositAt, lastWithdrawalAt }: { lastDepositAt: string | null; lastWithdrawalAt: string | null }) {
+  const times = [lastDepositAt, lastWithdrawalAt].filter(Boolean).map((d) => new Date(d as string).getTime());
+  if (times.length === 0) return <span className="muted">No activity</span>;
+  const days = Math.floor((Date.now() - Math.max(...times)) / 86_400_000);
+  const inactive = days > INACTIVE_AFTER_DAYS;
+  const color = inactive ? '#b91c1c' : '#15803d';
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 600, color, whiteSpace: 'nowrap' }}>
+      <span style={{ width: 8, height: 8, borderRadius: '50%', background: color }} />
+      {inactive ? `Inactive · ${days}d` : 'Active'}
+    </span>
+  );
+}
+
 type ImportKind = 'customers' | 'transactions' | null;
 
 export default function CustomersPage() {
@@ -340,7 +357,7 @@ export default function CustomersPage() {
                       <td className="num" style={{ fontWeight: 700, color: pnl == null ? '#94a3b8' : pnl >= 0 ? '#15803d' : '#b91c1c' }}>
                         {pnl == null ? '—' : money(Math.abs(pnl))}
                       </td>
-                      <td>{customer.accountStatus || <span className="muted">—</span>}</td>
+                      <td><ActivityStatus lastDepositAt={customer.lastDepositAt} lastWithdrawalAt={customer.lastWithdrawalAt} /></td>
                     </tr>
                   );
                 })}</tbody>
