@@ -88,7 +88,9 @@ export async function sendTestMessage(role: string, phone: string, tenantId: str
   // so the first failed try never delivers a message.
   let res = await send(7);
   if (!res.ok) {
-    const wanted = /expected number of values are (\d+)/i.exec(res.error ?? '');
+    // Interakt phrases the count two ways: "expected number of values are N" and
+    // "does not match the expected number of params (N)". Catch both, then retry once.
+    const wanted = /expected number of (?:values are|params\s*\()\s*(\d+)/i.exec(res.error ?? '');
     if (wanted) res = await send(Number(wanted[1]));
   }
   return res;
