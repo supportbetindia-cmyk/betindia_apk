@@ -1,7 +1,7 @@
 'use client';
 import { logout } from '@/lib/logout';
 
-import { useCallback } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Sidebar } from '@/components/Sidebar';
@@ -159,6 +159,51 @@ function LifecyclePanel() {
         </button>
         {run.error ? <span style={{ color: '#b91c1c', fontSize: 13 }}>{run.error instanceof Error ? run.error.message : 'Failed'}</span> : null}
         {result ? <span style={{ color: 'var(--green, #16a34a)', fontSize: 13 }}>Sent {sent}, failed {failed}.</span> : null}
+      </div>
+    </div>
+  );
+}
+
+type LifecycleConfig = { inactiveDays: number; ftdNoRepeatDays: number; cooldownDays: number; maxFollowups: number };
+const CONFIG_FIELDS: { key: keyof LifecycleConfig; label: string; hint: string }[] = [
+  { key: 'inactiveDays', label: 'Inactive after (days)', hint: 'No deposit/withdrawal this long → Inactive' },
+  { key: 'ftdNoRepeatDays', label: 'First-deposit no-repeat (days)', hint: 'One deposit, no repeat within this' },
+  { key: 'cooldownDays', label: 'Message cooldown (days)', hint: 'Don’t message the same player again within this' },
+  { key: 'maxFollowups', label: 'Max messages per stage', hint: 'Stop after this many, until they move stage' },
+];
+
+// Editable per-company lifecycle thresholds (the numbers the stage engine + sender use).
+function LifecycleConfigForm() {
+  const qc = useQueryClient();
+  const cfgQuery = useQuery({ queryKey: ['lifecycle-config'], queryFn: ({ signal }) => backendRequest<LifecycleConfig>('/lifecycle/config', { signal }) });
+  const [draft, setDraft] = useState<LifecycleConfig | null>(null);
+  useEffect(() => { if (cfgQuery.data) setDraft(cfgQuery.data); }, [cfgQuery.data]);
+  const save = useMutation({
+    mutationFn: (body: LifecycleConfig) => backendRequest<LifecycleConfig>('/lifecycle/config', { method: 'PUT', body: JSON.stringify(body) }),
+    onSuccess: (d) => { setDraft(d); qc.invalidateQueries({ queryKey: ['lifecycle-preview'] }); },
+  });
+  if (!draft) return null;
+  return (
+    <div className="panel">
+      <div className="panel-head"><h3>Lifecycle timing</h3><span className="panel-tag">thresholds</span></div>
+      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', padding: '4px 2px' }}>
+        {CONFIG_FIELDS.map((f) => (
+          <label key={f.key} style={{ fontSize: 13, color: '#475569', display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <span>{f.label}</span>
+            <input type="number" min={1} value={draft[f.key]}
+              onChange={(e) => setDraft({ ...draft, [f.key]: Math.max(1, Number(e.target.value) || 1) })}
+              style={{ width: 160, height: 36, borderRadius: 8, border: '1px solid rgba(13,18,41,.15)', padding: '0 10px' }} />
+            <span style={{ fontSize: 11, color: '#94a3b8', maxWidth: 180 }}>{f.hint}</span>
+          </label>
+        ))}
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 12 }}>
+        <button className="logout-btn2" style={{ background: 'var(--green, #16a34a)', color: '#fff' }}
+          disabled={save.isPending} onClick={() => save.mutate(draft)}>
+          {save.isPending ? 'Saving…' : 'Save timing'}
+        </button>
+        {save.isSuccess ? <span style={{ color: 'var(--green, #16a34a)', fontSize: 13 }}>Saved — applies on the next recompute (~2 min).</span> : null}
+        {save.error ? <span style={{ color: '#b91c1c', fontSize: 13 }}>{save.error instanceof Error ? save.error.message : 'Failed'}</span> : null}
       </div>
     </div>
   );
@@ -394,6 +439,7 @@ export default function AutomationsPage() {
 
         {/* WIN-BACK */}
         <LifecyclePanel />
+        <LifecycleConfigForm />
 
         {/* LOG */}
         <div className="panel">
