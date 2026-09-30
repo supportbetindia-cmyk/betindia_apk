@@ -95,54 +95,71 @@ function ToggleSwitch({ on, onChange, disabled, label }: {
   );
 }
 
-// Auto-WhatsApp to inactive players (7–90 days quiet), once every 7 days. On/off is
-// the retention WhatsApp account's "On" switch; this panel shows reach + a manual run.
-function WinbackPanel() {
+// The lifecycle engine's per-stage WhatsApp. On/off is the retention WhatsApp
+// account's "On" switch; this panel shows reach per stage + a manual run.
+const STAGE_LABELS: Record<string, string> = {
+  LEAD: 'Leads (not registered)',
+  REGISTERED_NO_FTD: 'Registered · no deposit',
+  FTD: 'Just made first deposit',
+  FTD_NO_REPEAT: 'First deposit · no repeat',
+  ACTIVE: 'Active players',
+  INACTIVE: 'Inactive',
+  REACTIVATED: 'Just came back',
+};
+type StagePreview = { stage: string; template: string | null; eligible: number };
+type LifecyclePreview = { configured: boolean; stages: StagePreview[] };
+type LifecycleRun = { configured: boolean; results: { stage: string; sent: number; failed: number }[] };
+
+function LifecyclePanel() {
   const qc = useQueryClient();
   const preview = useQuery({
-    queryKey: ['winback-preview'],
-    queryFn: ({ signal }) => backendRequest<{ eligible: number; configured: boolean }>('/winback/preview', { signal }),
+    queryKey: ['lifecycle-preview'],
+    queryFn: ({ signal }) => backendRequest<LifecyclePreview>('/lifecycle/send/preview', { signal }),
     refetchInterval: 30_000,
   });
   const run = useMutation({
-    mutationFn: () => backendRequest<{ eligible: number; sent: number; failed: number; skipped: number; reason?: string }>('/winback/run', { method: 'POST' }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['winback-preview'] }),
+    mutationFn: () => backendRequest<LifecycleRun>('/lifecycle/send/run', { method: 'POST' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['lifecycle-preview'] }),
   });
-  const d = preview.data;
+  const data = preview.data;
+  const configured = data?.configured;
+  const totalReady = data?.stages.reduce((s, x) => s + (x.template ? x.eligible : 0), 0) ?? 0;
   const result = run.data;
-  const configured = d?.configured;
+  const sent = result?.results.reduce((s, r) => s + r.sent, 0) ?? 0;
+  const failed = result?.results.reduce((s, r) => s + r.failed, 0) ?? 0;
 
   return (
     <div className="panel">
-      <div className="panel-head"><h3>Inactive win-back</h3><span className="panel-tag">auto-WhatsApp</span></div>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', padding: '6px 2px' }}>
-        <div>
-          <div style={{ fontWeight: 700, fontSize: 22, color: '#0f172a' }}>
-            {d ? d.eligible.toLocaleString() : '—'} <span style={{ fontSize: 14, fontWeight: 500, color: '#64748b' }}>inactive players ready</span>
-          </div>
-          <div className="kpi-vs" style={{ color: configured ? 'var(--green, #16a34a)' : '#b45309' }}>
-            {configured
-              ? 'ON — quiet 7–90 days · one message per player every 7 days · sends daily'
-              : 'OFF — add a retention WhatsApp account (with a win-back template) and turn it On'}
-          </div>
+      <div className="panel-head"><h3>Lifecycle WhatsApp</h3><span className="panel-tag">stage-based auto-messages</span></div>
+      <div className="kpi-vs" style={{ color: configured ? 'var(--green, #16a34a)' : '#b45309', marginBottom: 10 }}>
+        {configured
+          ? `ON — ${totalReady.toLocaleString()} players ready across stages · one message per player per 7 days · auto-send is opt-in (enable on the server)`
+          : 'OFF — add a retention WhatsApp account (with a key) and turn it On'}
+      </div>
+      <div className="txn-table">
+        <div className="txn-head" style={{ gridTemplateColumns: '1.4fr 1.4fr 0.7fr' }}>
+          <span>Stage</span><span>Template</span><span className="num">Ready now</span>
         </div>
+        {(data?.stages ?? []).map((s) => (
+          <div className="txn-row" key={s.stage} style={{ gridTemplateColumns: '1.4fr 1.4fr 0.7fr' }}>
+            <span>{STAGE_LABELS[s.stage] ?? s.stage}</span>
+            <span className="txn-mono">{s.template ?? <span className="muted">— not sent —</span>}</span>
+            <span className="num" style={{ fontWeight: 600 }}>{s.template ? s.eligible.toLocaleString() : '—'}</span>
+          </div>
+        ))}
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 12 }}>
         <button
           className="logout-btn2"
           style={{ background: configured ? 'var(--green, #16a34a)' : '#cbd5e1', color: '#fff' }}
           disabled={!configured || run.isPending}
-          onClick={() => {
-            if (window.confirm(`Send the win-back WhatsApp now to eligible inactive players?\n\nRespects the 7-day cooldown, so already-messaged players are skipped.`)) run.mutate();
-          }}
+          onClick={() => { if (window.confirm('Send lifecycle WhatsApp now to all eligible players across stages?\n\nRespects the 7-day cooldown and per-stage caps.')) run.mutate(); }}
         >
-          {run.isPending ? 'Sending…' : 'Send win-back now'}
+          {run.isPending ? 'Sending…' : 'Send lifecycle messages now'}
         </button>
+        {run.error ? <span style={{ color: '#b91c1c', fontSize: 13 }}>{run.error instanceof Error ? run.error.message : 'Failed'}</span> : null}
+        {result ? <span style={{ color: 'var(--green, #16a34a)', fontSize: 13 }}>Sent {sent}, failed {failed}.</span> : null}
       </div>
-      {run.error ? <div className="footer-note" style={{ color: '#b91c1c' }}>{run.error instanceof Error ? run.error.message : 'Failed to run'}</div> : null}
-      {result ? (
-        <div className="footer-note" style={{ color: 'var(--green, #16a34a)' }}>
-          {result.reason ? `Nothing sent — ${result.reason}.` : `Sent ${result.sent}, failed ${result.failed}, skipped ${result.skipped} (of ${result.eligible} eligible).`}
-        </div>
-      ) : null}
     </div>
   );
 }
@@ -376,7 +393,7 @@ export default function AutomationsPage() {
         </div>
 
         {/* WIN-BACK */}
-        <WinbackPanel />
+        <LifecyclePanel />
 
         {/* LOG */}
         <div className="panel">
