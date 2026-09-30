@@ -76,7 +76,7 @@ function StageBadge({ value }: { value: string | null }) {
   return <span style={{ background: s.bg, color: s.fg, fontWeight: 600, fontSize: 12, padding: '2px 8px', borderRadius: 999, whiteSpace: 'nowrap' }}>{s.label}</span>;
 }
 
-// Live activity status from the last transaction (deposit OR withdrawal): a player
+
 // is Inactive once their most recent transaction is more than 7 days old.
 const INACTIVE_AFTER_DAYS = 7;
 function ActivityStatus({ lastDepositAt, lastWithdrawalAt }: { lastDepositAt: string | null; lastWithdrawalAt: string | null }) {

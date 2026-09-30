@@ -77,6 +77,7 @@ export default function Customer360Page() {
     enabled: Boolean(tenantId && params.id),
   });
   const data = customerQuery.data;
+  console.log(data, "dataa 360")
   useAuthRedirect(customerQuery.error);
 
   // Prefer the lifetime totals from the report; fall back to what the live ledger has.

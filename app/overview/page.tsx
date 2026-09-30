@@ -56,8 +56,8 @@ export default function CompanyOverviewPage() {
     queryFn: ({ signal }) => backendRequest<Detail>(scopedHref(`/dashboard/details?period=${period}&metric=${detail!.metric}`), { tenantId, signal }),
     enabled: Boolean(tenantId && detail),
   });
-
   const d = query.data;
+  console.log(d)
   const open = (metric: string, title: string) => setDetail({ metric, title });
 
   return (
