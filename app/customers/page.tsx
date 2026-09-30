@@ -284,15 +284,6 @@ export default function CustomersPage() {
                   <Input value={draftSearch} onChange={(event) => setDraftSearch(event.target.value)} className="pl-8" placeholder="Search by name, phone or ID" />
                 </div>
                 <select
-                  value={activity}
-                  onChange={(event) => { setPage(1); setActivity(event.target.value); }}
-                  style={{ fontSize: 13, padding: '0 8px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', color: '#0f172a' }}
-                >
-                  <option value="">All status</option>
-                  <option value="active">Active</option>
-                  <option value="inactive">Inactive (7+ days)</option>
-                </select>
-                <select
                   value={stage}
                   onChange={(event) => { setPage(1); setStage(event.target.value); }}
                   style={{ fontSize: 13, padding: '0 8px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', color: '#0f172a' }}
