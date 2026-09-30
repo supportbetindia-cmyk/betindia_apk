@@ -53,10 +53,11 @@ type CustomerList = {
 };
 type ScheduleStatus = { enabled: boolean; timezone: string; atRiskDays: number; inactiveDays: number; lastRunAt: string | null };
 
-async function loadCustomers(search: string, page: number, missingReg: boolean, masterId: string, tenantId: string | null, signal: AbortSignal): Promise<CustomerList> {
+async function loadCustomers(search: string, page: number, missingReg: boolean, stage: string, masterId: string, tenantId: string | null, signal: AbortSignal): Promise<CustomerList> {
   const query = new URLSearchParams({ page: String(page), pageSize: '50' });
   if (search) query.set('search', search);
   if (missingReg) query.set('missingRegistration', 'true');
+  if (stage) query.set('stage', stage);
   return backendRequest<CustomerList>(withMaster(`/customers?${query.toString()}`, masterId), { tenantId, signal });
 }
 
@@ -102,11 +103,12 @@ export default function CustomersPage() {
   const [importing, setImporting] = useState<ImportKind>(null);
   const [importResult, setImportResult] = useState<string | null>(null);
   const [missingReg, setMissingReg] = useState(false);
+  const [stage, setStage] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
   const { tenantId, masterId, scopedHref } = useMasterFilter();
   const query = useQuery({
-    queryKey: ['backend-customers', tenantId, search, page, missingReg, masterId],
-    queryFn: ({ signal }) => loadCustomers(search, page, missingReg, masterId, tenantId, signal),
+    queryKey: ['backend-customers', tenantId, search, page, missingReg, stage, masterId],
+    queryFn: ({ signal }) => loadCustomers(search, page, missingReg, stage, masterId, tenantId, signal),
     enabled: Boolean(tenantId),
   });
   const schedule = useQuery({
@@ -277,6 +279,14 @@ export default function CustomersPage() {
                   <Search size={15} style={{ position: 'absolute', left: 10, top: 10, color: '#64748b' }} />
                   <Input value={draftSearch} onChange={(event) => setDraftSearch(event.target.value)} className="pl-8" placeholder="Search by name, phone or ID" />
                 </div>
+                <select
+                  value={stage}
+                  onChange={(event) => { setPage(1); setStage(event.target.value); }}
+                  style={{ fontSize: 13, padding: '0 8px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', color: '#0f172a' }}
+                >
+                  <option value="">All stages</option>
+                  {Object.entries(STAGE).map(([key, s]) => <option key={key} value={key}>{s.label}</option>)}
+                </select>
                 <Button type="submit">Search</Button>
               </form>
               <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#475569', cursor: 'pointer' }}>
@@ -302,15 +312,22 @@ export default function CustomersPage() {
           </div> : null}
 
           {query.data?.data.length ? (
-            <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+            <div className="players-scroll">
               <style>{`
-                .players-table { border-collapse: collapse; font-size: 13px; white-space: nowrap; min-width: 1500px; width: 100%; }
-                .players-table th, .players-table td { padding: 11px 16px; }
-                .players-table thead th { text-align: left; border-bottom: 1px solid #e2e8f0; color: #64748b; font-weight: 600; background: #fafbfc; }
-                .players-table tbody tr { border-bottom: 1px solid #eef2f7; }
-                .players-table tbody tr:hover { background: #f8fafc; }
+                .players-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; border: 1px solid var(--border); border-radius: 12px; box-shadow: inset 0 0 0 1px rgba(255,255,255,.6); }
+                .players-scroll::-webkit-scrollbar { height: 9px; }
+                .players-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 9px; }
+                .players-scroll::-webkit-scrollbar-track { background: #f1f5f9; }
+                .players-table { border-collapse: separate; border-spacing: 0; font-size: 13px; white-space: nowrap; min-width: 1500px; width: 100%; }
+                .players-table th, .players-table td { padding: 13px 18px; }
+                .players-table thead th { position: sticky; top: 0; z-index: 2; text-align: left; background: linear-gradient(#fbfcfe, #f5f7fb); border-bottom: 1px solid var(--border); color: #64748b; font-weight: 700; font-size: 10.5px; text-transform: uppercase; letter-spacing: .07em; }
+                .players-table tbody td { border-bottom: 1px solid var(--border-soft); transition: background .12s ease; }
+                .players-table tbody tr:last-child td { border-bottom: 0; }
+                .players-table tbody tr:hover td { background: #f6f9ff; }
                 .players-table .num { text-align: right; font-variant-numeric: tabular-nums; }
                 .players-table .muted { color: #94a3b8; font-weight: 400; }
+                .players-name { color: #0f172a; font-weight: 700; text-decoration: none; transition: color .12s ease; }
+                .players-name:hover { color: var(--purple); }
               `}</style>
               <table className="players-table">
                 <thead><tr>
@@ -334,7 +351,7 @@ export default function CustomersPage() {
                   const pnl = customer.netPnl == null || customer.netPnl === '' ? null : Number(customer.netPnl);
                   return (
                     <tr key={customer.id}>
-                      <td><Link href={scopedHref(`/customers/${customer.id}`)} style={{ color: '#4f46e5', fontWeight: 700 }}>{customer.name || 'No name'}</Link></td>
+                      <td><Link href={scopedHref(`/customers/${customer.id}`)} className="players-name">{customer.name || 'No name'}</Link></td>
                       <td>{customer.externalUserId || customer.masterId || <span className="muted">—</span>}</td>
                       <td>{customer.phone || <span className="muted">—</span>}</td>
                       <td><StageBadge value={customer.currentLifecycle} /></td>
