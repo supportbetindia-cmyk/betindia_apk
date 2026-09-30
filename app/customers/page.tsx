@@ -53,11 +53,12 @@ type CustomerList = {
 };
 type ScheduleStatus = { enabled: boolean; timezone: string; atRiskDays: number; inactiveDays: number; lastRunAt: string | null };
 
-async function loadCustomers(search: string, page: number, missingReg: boolean, stage: string, masterId: string, tenantId: string | null, signal: AbortSignal): Promise<CustomerList> {
-  const query = new URLSearchParams({ page: String(page), pageSize: '50' });
+async function loadCustomers(search: string, page: number, pageSize: number, missingReg: boolean, stage: string, activity: string, masterId: string, tenantId: string | null, signal: AbortSignal): Promise<CustomerList> {
+  const query = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
   if (search) query.set('search', search);
   if (missingReg) query.set('missingRegistration', 'true');
   if (stage) query.set('stage', stage);
+  if (activity) query.set('activity', activity);
   return backendRequest<CustomerList>(withMaster(`/customers?${query.toString()}`, masterId), { tenantId, signal });
 }
 
@@ -100,15 +101,18 @@ export default function CustomersPage() {
   const [draftSearch, setDraftSearch] = useState('');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
   const [importing, setImporting] = useState<ImportKind>(null);
   const [importResult, setImportResult] = useState<string | null>(null);
   const [missingReg, setMissingReg] = useState(false);
   const [stage, setStage] = useState('');
+  const [activity, setActivity] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
   const { tenantId, masterId, scopedHref } = useMasterFilter();
+
   const query = useQuery({
-    queryKey: ['backend-customers', tenantId, search, page, missingReg, stage, masterId],
-    queryFn: ({ signal }) => loadCustomers(search, page, missingReg, stage, masterId, tenantId, signal),
+    queryKey: ['backend-customers', tenantId, search, page, pageSize, missingReg, stage, activity, masterId],
+    queryFn: ({ signal }) => loadCustomers(search, page, pageSize, missingReg, stage, activity, masterId, tenantId, signal),
     enabled: Boolean(tenantId),
   });
   const schedule = useQuery({
@@ -217,7 +221,7 @@ export default function CustomersPage() {
     }
   }
 
-  const pages = Math.max(1, Math.ceil((query.data?.total ?? 0) / 50));
+  const pages = Math.max(1, Math.ceil((query.data?.total ?? 0) / pageSize));
 
   return (
     <div className="shell">
@@ -279,6 +283,15 @@ export default function CustomersPage() {
                   <Search size={15} style={{ position: 'absolute', left: 10, top: 10, color: '#64748b' }} />
                   <Input value={draftSearch} onChange={(event) => setDraftSearch(event.target.value)} className="pl-8" placeholder="Search by name, phone or ID" />
                 </div>
+                <select
+                  value={activity}
+                  onChange={(event) => { setPage(1); setActivity(event.target.value); }}
+                  style={{ fontSize: 13, padding: '0 8px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', color: '#0f172a' }}
+                >
+                  <option value="">All status</option>
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive (7+ days)</option>
+                </select>
                 <select
                   value={stage}
                   onChange={(event) => { setPage(1); setStage(event.target.value); }}
@@ -376,7 +389,17 @@ export default function CustomersPage() {
                   );
                 })}</tbody>
               </table>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 16 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 16, gap: 12, flexWrap: 'wrap' }}>
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: '#64748b', fontSize: 13 }}>
+                  Rows per page
+                  <select
+                    value={pageSize}
+                    onChange={(event) => { setPage(1); setPageSize(Number(event.target.value)); }}
+                    style={{ fontSize: 13, padding: '4px 8px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', color: '#0f172a' }}
+                  >
+                    {[25, 50, 100, 200].map((n) => <option key={n} value={n}>{n}</option>)}
+                  </select>
+                </label>
                 <span style={{ color: '#64748b', fontSize: 13 }}>Page {page} of {pages}</span>
                 <div style={{ display: 'flex', gap: 8 }}>
                   <Button variant="outline" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>Previous</Button>
