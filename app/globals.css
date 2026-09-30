@@ -11,7 +11,7 @@
   --sc-card-foreground: 222 30% 12%;
   --sc-popover: 0 0% 100%;
   --sc-popover-foreground: 222 30% 12%;
-  --sc-primary: 142 71% 35%;
+  --sc-primary: 25 100% 50%;
   --sc-primary-foreground: 0 0% 100%;
   --sc-secondary: 210 40% 96%;
   --sc-secondary-foreground: 222 30% 20%;
@@ -23,26 +23,28 @@
   --sc-destructive-foreground: 0 0% 100%;
   --sc-border: 214 32% 91%;
   --sc-input: 214 32% 91%;
-  --sc-ring: 142 71% 35%;
+  --sc-ring: 25 100% 50%;
   --sc-radius: 0.6rem;
 }
 
 :root {
-  --bg: #f6f7f9;
+  /* Stripe direction: cool off-white canvas, blue-gray ink scale, hairline-ring
+     elevation. Orange stays the single accent. */
+  --bg: #f6f9fc;
   --panel: #ffffff;
-  --border: #e7e9ee;
-  --border-soft: #eef0f4;
-  --text: #101828;
-  --muted: #667085;
+  --border: #e3e8ee;
+  --border-soft: #eef2f7;
+  --text: #1a1f36;
+  --muted: #697386;
   --purple: #ff6b00;
   --purple-soft: #fff3e8;
   --green: #059669;
   --red: #dc2626;
-  --radius: 14px;
-  /* Layered, low-opacity elevation reads more premium than one heavy drop shadow. */
-  --shadow: 0 1px 2px rgba(16, 24, 40, .04), 0 1px 3px rgba(16, 24, 40, .05);
-  --shadow-md: 0 4px 12px -2px rgba(16, 24, 40, .08), 0 2px 6px -2px rgba(16, 24, 40, .05);
-  --shadow-lg: 0 16px 40px -12px rgba(16, 24, 40, .16);
+  --radius: 10px;
+  /* Stripe's signature elevation: a 1px ring + soft blue-tinted layered shadow. */
+  --shadow: 0 0 0 1px rgba(50, 50, 93, .07), 0 2px 5px -1px rgba(50, 50, 93, .10), 0 1px 3px -1px rgba(0, 0, 0, .06);
+  --shadow-md: 0 0 0 1px rgba(50, 50, 93, .08), 0 7px 14px -4px rgba(50, 50, 93, .12), 0 3px 6px -3px rgba(0, 0, 0, .08);
+  --shadow-lg: 0 15px 35px -8px rgba(50, 50, 93, .18), 0 5px 15px -6px rgba(0, 0, 0, .12);
   --ring: 0 0 0 3px rgba(255, 107, 0, .12);
 }
 
@@ -610,12 +612,12 @@ body { min-width: 320px; }
 ::selection { background: #ffdfc7; color: #7c2d12; }
 button, input, select, textarea, a { -webkit-tap-highlight-color: transparent; }
 button, select { touch-action: manipulation; }
-:where(button, a, input, select, textarea):focus-visible { outline: 3px solid rgba(255, 107, 0, .28); outline-offset: 2px; }
+:where(button, a, input, select, textarea):focus-visible { outline: 2px solid rgba(255, 107, 0, .55); outline-offset: 2px; }
 
-.shell { background: linear-gradient(135deg, #f8fafc 0%, #f4f7fb 55%, #f8fafc 100%); }
+.shell { background: var(--bg); }
 .main { padding: 38px clamp(22px, 3vw, 48px) 64px; max-width: 1540px; }
 .topbar, .topbar2 { min-height: 58px; margin-bottom: 28px; }
-.page-title { color: #0b1f3a; font-size: clamp(25px, 2vw, 31px); font-weight: 820; }
+.page-title { color: #0b1f3a; font-size: clamp(24px, 2vw, 29px); font-weight: 720; letter-spacing: -.028em; }
 .page-sub { max-width: 720px; color: #6b7d93; line-height: 1.55; }
 
 .sidebar { width: 248px; padding: 22px 14px 16px; background: linear-gradient(180deg, #0b1f3a 0%, #0a1a31 100%); }
@@ -628,17 +630,17 @@ button, select { touch-action: manipulation; }
 .company-switch { margin-top: 16px; transition: border-color .15s, background .15s, transform .15s; }
 .company-switch:hover { border-color: rgba(255, 154, 82, .32); transform: translateY(-1px); }
 
-.panel, .kpi, .notif-tile { border-color: #e5eaf1; box-shadow: 0 1px 2px rgba(15, 23, 42, .025), 0 10px 30px rgba(15, 23, 42, .035); }
-.panel { border-radius: 13px; }
-.panel-head h3 { color: #172033; font-size: 14.5px; }
-.kpi { border-radius: 12px; transition: border-color .15s, box-shadow .15s, transform .15s; }
-.kpi:hover { border-color: #d9e1eb; box-shadow: 0 8px 24px rgba(15, 23, 42, .06); transform: translateY(-1px); }
+.panel, .kpi, .notif-tile { border-color: transparent; box-shadow: var(--shadow); }
+.panel { border-radius: var(--radius); }
+.panel-head h3 { color: #1a1f36; font-size: 14.5px; }
+.kpi { border-radius: var(--radius); transition: box-shadow .15s, transform .15s; }
+.kpi:hover { box-shadow: var(--shadow-md); transform: translateY(-1px); }
 .kpi-value, .active-hero-num, .txn-amt, .quick-value { font-variant-numeric: tabular-nums; }
 
 .btn-primary, .btn-ghost, .logout-btn2, .cmp-btn, .workspace-signout { min-height: 38px; transition: background .15s, border-color .15s, color .15s, transform .15s, box-shadow .15s; }
-.btn-primary { box-shadow: 0 5px 14px rgba(255, 107, 0, .16); }
-.btn-primary:hover:not(:disabled), .cmp-btn:hover:not(:disabled) { filter: none; background: #e85f00; border-color: #e85f00; transform: translateY(-1px); }
-.btn-ghost:hover:not(:disabled), .logout-btn2:hover:not(:disabled) { color: #c44f00; border-color: #fdba74; background: #fffaf5; }
+.btn-primary { box-shadow: 0 1px 2px rgba(50, 50, 93, .12), 0 1px 1px rgba(0, 0, 0, .06); }
+.btn-primary:hover:not(:disabled), .cmp-btn:hover:not(:disabled) { filter: none; background: #e85f00; border-color: #e85f00; transform: translateY(-1px); box-shadow: 0 3px 7px -1px rgba(50, 50, 93, .18), 0 1px 2px rgba(0, 0, 0, .08); }
+.btn-ghost:hover:not(:disabled), .logout-btn2:hover:not(:disabled) { color: #1a1f36; border-color: #d5dbe1; background: #f7fafc; }
 .btn-primary:active:not(:disabled), .btn-ghost:active:not(:disabled) { transform: translateY(0); }
 
 :where(input, select, textarea):not([type='checkbox']):not([type='radio']) { transition: border-color .15s, box-shadow .15s, background .15s; }
@@ -653,7 +655,7 @@ button, select { touch-action: manipulation; }
 .txn-table, .ua-scroll, .notif-table { overflow-x: auto; scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
 .txn-head, .ua-head, .notif-head { position: sticky; top: 0; z-index: 2; background: #f8fafc; }
 .txn-row, .ua-row, .notif-row { transition: background .12s; }
-.txn-row:hover, .ua-row:hover, .notif-row:hover { background: #fffaf5; }
+.txn-row:hover, .ua-row:hover, .notif-row:hover { background: #f6f8fb; }
 
 @media (max-width: 1150px) {
   .main { padding-inline: 24px; }
