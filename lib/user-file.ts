@@ -140,7 +140,8 @@ function mapRow(record: Record<string, string>): ParsedUser | null {
   const isReport = hasKey(record, /first[\s_]*deposit[\s_]*amount/i, /total[\s_]*deposit[\s_]*count/i, /lifetime[\s_]*deposit[\s_]*count/i);
   return {
     user_id: userId,
-    branch_id: field(record, /^branch[\s_]*id$/i) || null,
+    // Accept "Master ID" as well as "Branch ID" (same thing in different exports).
+    branch_id: field(record, /^branch[\s_]*id$/i, /^master[\s_]*id$/i) || null,
     mobile: field(record, /^phone[\s_]*number$/i, /^mobile$/i, /^phone$/i) || null,
     // Some report rows carry "0" as a placeholder name — treat it as no name.
     name: (() => { const n = field(record, /^name$/i); return n && n !== '0' ? n : null; })(),
