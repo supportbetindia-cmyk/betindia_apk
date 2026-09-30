@@ -305,7 +305,11 @@ export default function CustomersPage() {
           </div>
 
           {query.isError ? <div className="banner2">{query.error instanceof Error ? query.error.message : 'Could not load players'}</div> : null}
-          {query.isLoading ? <div className="empty2">Loading players…</div> : null}
+          {query.isLoading ? (
+            <div className="skeleton-list" aria-label="Loading players">
+              {Array.from({ length: 8 }).map((_, i) => <div key={i} className="skeleton skeleton-row" />)}
+            </div>
+          ) : null}
           {query.data && query.data.data.length === 0 ? <div className="empty2">
             <Users size={22} />
             <div>{search ? 'No players found for this search.' : 'No players yet. Upload a CSV file to add them.'}</div>
