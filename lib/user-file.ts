@@ -107,21 +107,29 @@ function reportFrom(record: Record<string, string>): ReportFinancials {
   };
 }
 
+// A calendar date as "YYYY-MM-DD" from the LOCAL parts — never toISOString(), which
+// would shift the day across the timezone (e.g. "30 Sep" → "29 Sep 18:30Z").
+function localDateStr(d: Date): string | null {
+  if (Number.isNaN(d.getTime())) return null;
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 function parseDate(value: string): string | null {
   if (!value) return null;
   const s = value.trim();
   if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
-    const d = new Date(s);
-    return Number.isNaN(d.getTime()) ? null : d.toISOString();
+    // Already YYYY-MM-DD — keep the calendar day as-is (no Date round-trip).
+    return s.slice(0, 10);
   }
   const m = s.match(/^(\d{1,2})[/\-](\d{1,2})[/\-](\d{4})/);
   if (m) {
     const [, dd, mm, yyyy] = m;
-    const d = new Date(Number(yyyy), Number(mm) - 1, Number(dd));
-    return Number.isNaN(d.getTime()) ? null : d.toISOString();
+    return localDateStr(new Date(Number(yyyy), Number(mm) - 1, Number(dd)));
   }
-  const fallback = new Date(s);
-  return Number.isNaN(fallback.getTime()) ? null : fallback.toISOString();
+  return localDateStr(new Date(s));
 }
 
 function toObjects(rows: string[][]): Record<string, string>[] {
