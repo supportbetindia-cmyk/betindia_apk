@@ -115,9 +115,6 @@ export default function CustomersPage() {
     enabled: Boolean(tenantId),
   });
 
-  // CSV upload: parse in the browser with the shared User Master parser, then post the
-  // rows to the backend for a single bulk upsert. Lets any tenant onboard from a file
-  // (webhooks keep it live afterwards).
   const csvUpload = useMutation({
     mutationFn: async (file: File) => {
       const parsed = parseUsersCsv(await file.text());
