@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Sidebar } from '@/components/Sidebar';
+import { Button } from '@/components/ui/button';
 import { backendRequest } from '@/lib/backend-api';
 
 type Rule = { event: string; template: string; trigger: string };
@@ -110,6 +111,17 @@ type StagePreview = { stage: string; template: string | null; eligible: number }
 type LifecyclePreview = { configured: boolean; stages: StagePreview[] };
 type LifecycleRun = { configured: boolean; results: { stage: string; sent: number; failed: number }[] };
 
+// Plain one-liners so anyone reading the table knows what each stage is.
+const STAGE_DESC: Record<string, string> = {
+  LEAD: 'Signed up but no account yet — nudge to get started',
+  REGISTERED_NO_FTD: 'Account made, never deposited — nudge for first deposit',
+  FTD: 'Just made their first deposit — welcome them',
+  FTD_NO_REPEAT: 'Deposited once, not again yet — check in',
+  ACTIVE: 'Playing regularly — left alone (no message)',
+  INACTIVE: 'Gone quiet — win-back nudge',
+  REACTIVATED: 'Came back after being away — welcome back',
+};
+
 function LifecyclePanel() {
   const qc = useQueryClient();
   const preview = useQuery({
@@ -130,35 +142,55 @@ function LifecyclePanel() {
 
   return (
     <div className="panel">
-      <div className="panel-head"><h3>Lifecycle WhatsApp</h3><span className="panel-tag">stage-based auto-messages</span></div>
-      <div className="kpi-vs" style={{ color: configured ? 'var(--green, #16a34a)' : '#b45309', marginBottom: 10 }}>
-        {configured
-          ? `ON — ${totalReady.toLocaleString()} players ready across stages · one message per player per 7 days · auto-send is opt-in (enable on the server)`
-          : 'OFF — add a retention WhatsApp account (with a key) and turn it On'}
+      <div className="panel-head">
+        <div>
+          <h3>Automatic WhatsApp messages</h3>
+          <div className="page-sub" style={{ margin: '4px 0 0' }}>Each player gets the right message for where they are in their journey.</div>
+        </div>
+        <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 11px', borderRadius: 999, background: configured ? '#ecfdf3' : '#fff7ed', color: configured ? '#15803d' : '#b45309' }}>
+          {configured ? 'Turned on' : 'Turned off'}
+        </span>
       </div>
+
+      {configured ? (
+        <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center', padding: '12px 14px', borderRadius: 10, background: '#f6f9fc', border: '1px solid var(--border)', marginBottom: 14 }}>
+          <div><span style={{ fontSize: 22, fontWeight: 700, color: '#1a1f36' }}>{totalReady.toLocaleString()}</span> <span className="page-sub" style={{ margin: 0 }}>players ready for their next message</span></div>
+          <div style={{ width: 1, height: 28, background: 'var(--border)' }} />
+          <div className="page-sub" style={{ margin: 0 }}>Sends up to <b>200</b> per run · no one messaged twice within <b>7 days</b></div>
+        </div>
+      ) : (
+        <div className="banner2" style={{ marginBottom: 14 }}>Not set up yet — add a retention WhatsApp account (with a key) and switch it on.</div>
+      )}
+
       <div className="txn-table">
-        <div className="txn-head" style={{ gridTemplateColumns: '1.4fr 1.4fr 0.7fr' }}>
-          <span>Stage</span><span>Template</span><span className="num">Ready now</span>
+        <div className="txn-head" style={{ gridTemplateColumns: '2fr 1.3fr 0.6fr' }}>
+          <span>Player stage</span><span>Message sent</span><span className="num">Waiting</span>
         </div>
         {(data?.stages ?? []).map((s) => (
-          <div className="txn-row" key={s.stage} style={{ gridTemplateColumns: '1.4fr 1.4fr 0.7fr' }}>
-            <span>{STAGE_LABELS[s.stage] ?? s.stage}</span>
-            <span className="txn-mono">{s.template ?? <span className="muted">— not sent —</span>}</span>
-            <span className="num" style={{ fontWeight: 600 }}>{s.template ? s.eligible.toLocaleString() : '—'}</span>
+          <div className="txn-row" key={s.stage} style={{ gridTemplateColumns: '2fr 1.3fr 0.6fr', alignItems: 'flex-start' }}>
+            <span style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <b style={{ fontWeight: 600, color: '#1a1f36' }}>{STAGE_LABELS[s.stage] ?? s.stage}</b>
+              <small className="page-sub" style={{ margin: 0, fontSize: 11 }}>{STAGE_DESC[s.stage] ?? ''}</small>
+            </span>
+            <span className="txn-mono" style={{ paddingTop: 2 }}>{s.template ?? <span className="muted">— none —</span>}</span>
+            <span className="num" style={{ fontWeight: 700, paddingTop: 2 }}>{s.template ? s.eligible.toLocaleString() : '—'}</span>
           </div>
         ))}
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 12 }}>
-        <button
-          className="logout-btn2"
-          style={{ background: configured ? 'var(--green, #16a34a)' : '#cbd5e1', color: '#fff' }}
+
+      <p className="page-sub" style={{ fontSize: 11, margin: '10px 2px 0' }}>
+        &ldquo;Waiting&rdquo; counts only players with a phone number who are due a message, and shows at most 200 (the per-run limit). The rest are sent on the next runs.
+      </p>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 14 }}>
+        <Button
           disabled={!configured || run.isPending}
-          onClick={() => { if (window.confirm('Send lifecycle WhatsApp now to all eligible players across stages?\n\nRespects the 7-day cooldown and per-stage caps.')) run.mutate(); }}
+          onClick={() => { if (window.confirm('Send WhatsApp now to all players who are due one?\n\nRespects the 7-day cooldown and the 200-per-run limit.')) run.mutate(); }}
         >
-          {run.isPending ? 'Sending…' : 'Send lifecycle messages now'}
-        </button>
+          {run.isPending ? 'Sending…' : 'Send now'}
+        </Button>
         {run.error ? <span style={{ color: '#b91c1c', fontSize: 13 }}>{run.error instanceof Error ? run.error.message : 'Failed'}</span> : null}
-        {result ? <span style={{ color: 'var(--green, #16a34a)', fontSize: 13 }}>Sent {sent}, failed {failed}.</span> : null}
+        {result ? <span style={{ color: '#15803d', fontSize: 13, fontWeight: 600 }}>Done — sent {sent}, failed {failed}.</span> : null}
       </div>
     </div>
   );
@@ -185,24 +217,28 @@ function LifecycleConfigForm() {
   if (!draft) return null;
   return (
     <div className="panel">
-      <div className="panel-head"><h3>Lifecycle timing</h3><span className="panel-tag">thresholds</span></div>
-      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', padding: '4px 2px' }}>
+      <div className="panel-head">
+        <div>
+          <h3>Timing &amp; limits</h3>
+          <div className="page-sub" style={{ margin: '4px 0 0' }}>The rules that decide when a player changes stage and how often they&apos;re messaged.</div>
+        </div>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 16, padding: '4px 2px' }}>
         {CONFIG_FIELDS.map((f) => (
-          <label key={f.key} style={{ fontSize: 13, color: '#475569', display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <label key={f.key} style={{ fontSize: 13, color: '#1a1f36', fontWeight: 600, display: 'flex', flexDirection: 'column', gap: 5 }}>
             <span>{f.label}</span>
             <input type="number" min={1} value={draft[f.key]}
               onChange={(e) => setDraft({ ...draft, [f.key]: Math.max(1, Number(e.target.value) || 1) })}
-              style={{ width: 160, height: 36, borderRadius: 8, border: '1px solid rgba(13,18,41,.15)', padding: '0 10px' }} />
-            <span style={{ fontSize: 11, color: '#94a3b8', maxWidth: 180 }}>{f.hint}</span>
+              style={{ width: '100%', height: 38, borderRadius: 9, border: '1px solid var(--border)', padding: '0 11px', fontWeight: 600 }} />
+            <span className="page-sub" style={{ margin: 0, fontSize: 11, fontWeight: 400 }}>{f.hint}</span>
           </label>
         ))}
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 12 }}>
-        <button className="logout-btn2" style={{ background: 'var(--green, #16a34a)', color: '#fff' }}
-          disabled={save.isPending} onClick={() => save.mutate(draft)}>
-          {save.isPending ? 'Saving…' : 'Save timing'}
-        </button>
-        {save.isSuccess ? <span style={{ color: 'var(--green, #16a34a)', fontSize: 13 }}>Saved — applies on the next recompute (~2 min).</span> : null}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 14 }}>
+        <Button disabled={save.isPending} onClick={() => save.mutate(draft)}>
+          {save.isPending ? 'Saving…' : 'Save changes'}
+        </Button>
+        {save.isSuccess ? <span style={{ color: '#15803d', fontSize: 13, fontWeight: 600 }}>Saved — takes effect within ~2 minutes.</span> : null}
         {save.error ? <span style={{ color: '#b91c1c', fontSize: 13 }}>{save.error instanceof Error ? save.error.message : 'Failed'}</span> : null}
       </div>
     </div>
@@ -293,11 +329,11 @@ export default function AutomationsPage() {
             </div>
           </div>
           <div className="kpi" style={{ display: 'block' }}>
-            <div className="kpi-label">Interakt (WhatsApp)</div>
+            <div className="kpi-label">WhatsApp connection</div>
             <div className="kpi-value" style={{ color: interakt ? 'var(--green)' : '#e5484d' }}>
-              {interakt ? '● Connected' : '○ Not configured'}
+              {interakt ? '● Connected' : '○ Not connected'}
             </div>
-            <div className="kpi-delta"><span className="kpi-vs">{interakt ? 'API key set' : 'add INTERAKT_API_KEY'}</span></div>
+            <div className="kpi-delta"><span className="kpi-vs">{interakt ? 'Connected and ready' : 'Not connected yet'}</span></div>
           </div>
         </div>
 
@@ -314,9 +350,9 @@ export default function AutomationsPage() {
             <div className="kpi-delta"><span className="kpi-vs">after all retries</span></div>
           </div>
           <div className="kpi" style={{ display: 'block' }}>
-            <div className="kpi-label">Sender cron last ran</div>
+            <div className="kpi-label">Last send check</div>
             <div className="kpi-value" style={{ fontSize: 18 }}>{health?.lastCronRun ? new Date(health.lastCronRun).toLocaleTimeString() : '—'}</div>
-            <div className="kpi-delta"><span className="kpi-vs">{health?.lastCronRun ? `${health?.cronAgeMin ?? 0} min ago` : 'never — set up cron'}</span></div>
+            <div className="kpi-delta"><span className="kpi-vs">{health?.lastCronRun ? `${health?.cronAgeMin ?? 0} min ago` : 'not run yet'}</span></div>
           </div>
         </div>
 
@@ -469,8 +505,8 @@ export default function AutomationsPage() {
         </div>
 
         <div className="footer-note">
-          Use the <b>Control Panel</b> switches above to turn automation on or off instantly — no redeploy needed.
-          A per-minute cron drains the queue and sends each WhatsApp; the master switch pauses all sending at once.
+          Use the <b>Control Panel</b> switches to turn messages on or off instantly. The <b>master switch</b> pauses everything at once —
+          handy if you ever need to stop all WhatsApp sending immediately.
         </div>
       </main>
     </div>
