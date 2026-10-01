@@ -392,7 +392,7 @@ export default function CustomersPage() {
                     onChange={(event) => { setPage(1); setPageSize(Number(event.target.value)); }}
                     style={{ fontSize: 13, padding: '4px 8px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', color: '#0f172a' }}
                   >
-                    {[25, 50, 100, 200].map((n) => <option key={n} value={n}>{n}</option>)}
+                    {[25, 50, 100, 200, 500].map((n) => <option key={n} value={n}>{n}</option>)}
                   </select>
                 </label>
                 <span style={{ color: '#64748b', fontSize: 13 }}>Page {page} of {pages}</span>

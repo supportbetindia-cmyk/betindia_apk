@@ -292,7 +292,7 @@ export default function AnalyticsPage() {
           </div>
         ) : (
           <>
-            <GrowthPanel />
+           
 
             <CsvMatch />
 

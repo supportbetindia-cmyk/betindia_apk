@@ -35,6 +35,7 @@ const NAV: Array<{ label: string; items: NavItem[] }> = [
     { icon: PiggyBank, label: 'Profit split', href: '/profit' },
     { icon: Wallet, label: 'Budgets', href: '/budgets' },
     { icon: Users, label: 'Players', href: '/customers' },
+     { icon: LineChart, label: 'Player analytics', href: '/analytics' },
     { icon: CreditCard, label: 'Transactions', href: '/transactions' },
     { icon: Webhook, label: 'Webhooks', href: '/webhooks' },
   ] },
@@ -48,7 +49,7 @@ const NAV: Array<{ label: string; items: NavItem[] }> = [
   { label: 'Analyse', items: [
     { icon: FileBarChart, label: 'Reports', href: '/reports' },
     { icon: BarChart3, label: 'Product analytics', href: '/' },
-    { icon: LineChart, label: 'Player analytics', href: '/analytics' },
+   
   ] },
   { label: 'Configure', items: [
     { icon: ShieldCheck, label: 'Admin', href: '/admin' },
