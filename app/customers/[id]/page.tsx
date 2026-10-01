@@ -96,6 +96,8 @@ export default function Customer360Page() {
   const withdrawals = data ? (data.lifetime.totalWithdrawals ?? data.ledger.totalWithdrawals) : 0;
   const withdrawalCount = data ? (data.lifetime.withdrawalCount ?? data.ledger.withdrawalCount) : 0;
   const profit = data ? (data.lifetime.netPnl ?? (deposits - withdrawals)) : 0;
+  // Loss commission = 3% of profit, only when the house is up (matches Player analytics).
+  const lossComm = profit > 0 ? Math.round(profit * 0.03) : 0;
   const name = data?.customer.name || 'This player';
 
   return (
@@ -134,6 +136,7 @@ export default function Customer360Page() {
             <BigCard color={GREEN} icon={<ArrowDownCircle size={18} color={GREEN} />} label="Money added" value={money(deposits)} sub={`${depositCount ?? 0} times`} />
             <BigCard color={RED} icon={<ArrowUpCircle size={18} color={RED} />} label="Money taken out" value={money(withdrawals)} sub={`${withdrawalCount ?? 0} times`} />
             <BigCard color={profit >= 0 ? GREEN : RED} label={profit >= 0 ? 'Your profit' : 'Your loss'} value={money(Math.abs(profit))} sub="Money added minus taken out" />
+            <BigCard color="#b08d3f" label="Loss commission (3%)" value={lossComm ? money(lossComm) : '—'} sub="3% of profit (0 if player is ahead)" />
             <BigCard color={GREEN} label="Added today" value={money(data.today.deposits)} sub="Confirmed today" />
             <BigCard color={RED} label="Taken out today" value={money(data.today.withdrawals)} sub="Confirmed today" />
             <BigCard label="First deposit" value={money(data.ftd.amount)} sub={day(data.ftd.date)} />

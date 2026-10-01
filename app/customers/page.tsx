@@ -353,10 +353,13 @@ export default function CustomersPage() {
                   <th className="num">Total in</th>
                   <th className="num">Total out</th>
                   <th className="num">Profit / Loss</th>
+                  <th className="num">Loss comm. 3%</th>
                   <th>Status</th>
                 </tr></thead>
                 <tbody>{query.data.data.map((customer) => {
                   const pnl = customer.netPnl == null || customer.netPnl === '' ? null : Number(customer.netPnl);
+                  // Loss commission = 3% of P/L, only when the house is up (matches Player analytics).
+                  const lossComm = pnl != null && pnl > 0 ? Math.round(pnl * 0.03) : 0;
                   return (
                     <tr key={customer.id}>
                       <td><Link href={scopedHref(`/customers/${customer.id}`)} className="players-name">{customer.name || 'No name'}</Link></td>
@@ -378,6 +381,9 @@ export default function CustomersPage() {
                       </td>
                       <td className="num" style={{ fontWeight: 700, color: pnl == null ? '#94a3b8' : pnl >= 0 ? '#15803d' : '#b91c1c' }}>
                         {pnl == null ? '—' : money(Math.abs(pnl))}
+                      </td>
+                      <td className="num" style={{ fontWeight: 600, color: lossComm ? '#b08d3f' : '#94a3b8' }}>
+                        {lossComm ? money(lossComm) : '—'}
                       </td>
                       <td><ActivityStatus lastDepositAt={customer.lastDepositAt} lastWithdrawalAt={customer.lastWithdrawalAt} /></td>
                     </tr>
