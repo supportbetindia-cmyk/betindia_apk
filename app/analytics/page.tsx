@@ -7,6 +7,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Sidebar } from '@/components/Sidebar';
 import { useMasterFilter } from '@/components/MasterFilterProvider';
 import { withMaster } from '@/lib/master-filter';
+import { backendRequest } from '@/lib/backend-api';
 import { CsvMatch } from '@/components/CsvMatch';
 import { UserDetail } from '@/components/UserDetail';
 import { GrowthPanel } from '@/components/GrowthPanel';
@@ -46,17 +47,16 @@ const STATUS_CLASS: Record<UserStatus, string> = {
   registered_only: 's-sent',
 };
 
+// Live source: the NestJS backend reads saas.customers + saas.transactions (not the
+// old frozen Supabase public.* tables).
 async function fetchAnalytics(masterId: string): Promise<Data> {
-  const res = await fetch(withMaster('/api/user-analytics', masterId), { cache: 'no-store' });
-  const body = (await res.json()) as Data;
-  if (!res.ok) throw new Error(body.error || 'User analytics is temporarily unavailable');
-  return body;
+  return backendRequest<Data>(withMaster('/dashboard/user-analytics', masterId));
 }
 
 async function fetchBreakdown(from: string, to: string, masterId: string): Promise<UserRow[]> {
-  const res = await fetch(withMaster(`/api/user-analytics/breakdown?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`, masterId));
-  const body = (await res.json()) as { rows?: UserRow[]; error?: string };
-  if (!res.ok) throw new Error(body.error || 'Failed to load breakdown');
+  const body = await backendRequest<{ rows?: UserRow[] }>(
+    withMaster(`/dashboard/user-analytics/breakdown?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`, masterId),
+  );
   return body.rows ?? [];
 }
 

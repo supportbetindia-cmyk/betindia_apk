@@ -15,6 +15,7 @@ import {
   FileBarChart,
   Webhook,
   MessageCircleMore,
+  Inbox,
   Megaphone,
   PiggyBank,
   Wallet,
@@ -39,6 +40,7 @@ const NAV: Array<{ label: string; items: NavItem[] }> = [
   ] },
   { label: 'Engage', items: [
     { icon: MessageCircleMore, label: 'WhatsApp', href: '/whatsapp' },
+    { icon: Inbox, label: 'Inbox', href: '/inbox' },
     { icon: Megaphone, label: 'Campaigns', href: '/campaigns' },
     { icon: Zap, label: 'Automations', href: '/automations' },
     { icon: BellRing, label: 'Push notifications', href: '/notifications' },
