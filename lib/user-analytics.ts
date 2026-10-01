@@ -1,14 +1,3 @@
-// Server-side user analytics built from the transactions + users tables (NOT the
-// SDK analytics_events, which are empty). Everything here reads with the
-// service_role key, so import ONLY from a route handler — never a client file.
-//
-// "Active" here means transaction activity (a deposit/withdrawal in the window),
-// because that is the only per-user activity signal we currently have.
-//
-// Status classification checks REJECTED before APPROVED on purpose: the platform
-// sends "reject_completed", which contains "complet" — so an approve-first regex
-// (like storedReconciliation) would wrongly count rejected rows as approved.
-
 import { getCurrentTenantId } from './tenant';
 import { scopeMasterRows } from './master-filter';
 
@@ -17,8 +6,7 @@ const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 const DAY_MS = 86_400_000;
 
-/** True only for a settled/approved transaction. Rejected is checked first so
- * "reject_completed" (contains "complet") is never mistaken for approved. */
+
 export function isApprovedStatus(status: string | null): boolean {
   const s = (status ?? '').toLowerCase();
   if (/no statement|absent|reject|declin|fail|cancel/.test(s)) return false;
@@ -43,8 +31,6 @@ export type AnalyticsUser = {
   name: string | null;
   mobile: string | null;
   register_date: string | null;
-  // CRM / User Master report financials (lifetime source of truth). Null when
-  // this user was never synced from a report.
   first_deposit_date?: string | null;
   first_deposit_amount?: number | null;
   last_deposit_date?: string | null;
