@@ -6,6 +6,7 @@ import { useMasterFilter } from './MasterFilterProvider';
 import { usePathname } from 'next/navigation';
 import {
   BarChart3,
+  Bell,
   BellRing,
   Building2,
   CreditCard,
@@ -31,6 +32,7 @@ type NavItem = { icon: LucideIcon; label: string; href: string };
 const NAV: Array<{ label: string; items: NavItem[] }> = [
   { label: 'Manage', items: [
     { icon: TrendingUp, label: 'Overview', href: '/overview' },
+    { icon: Bell, label: 'Alerts', href: '/alerts' },
     { icon: Target, label: 'Targets', href: '/targets' },
     { icon: PiggyBank, label: 'Profit split', href: '/profit' },
     { icon: Wallet, label: 'Budgets', href: '/budgets' },
