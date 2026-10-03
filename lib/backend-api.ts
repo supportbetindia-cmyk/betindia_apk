@@ -53,6 +53,29 @@ export function clearSelectedTenantId(): void {
   window.dispatchEvent(new Event('ci-tenant-change'));
 }
 
+/** Fetch a file from the backend (with auth + tenant) and trigger a browser download.
+ * Used for CSV exports, where the response is a file rather than JSON. */
+export async function backendDownload(path: string, filename: string, tenantId?: string | null): Promise<void> {
+  const { data, error } = await getSupabaseBrowser().auth.getSession();
+  if (error || !data.session?.access_token) {
+    throw new BackendApiError('Your session has expired. Please sign in again.', 401);
+  }
+  const tid = tenantId === undefined ? getSelectedTenantId() : tenantId;
+  const headers = new Headers({ Authorization: `Bearer ${data.session.access_token}` });
+  if (tid) headers.set('x-tenant-id', tid);
+  const response = await fetch(`${BACKEND_URL}/api/v1${path.startsWith('/') ? path : `/${path}`}`, { headers });
+  if (!response.ok) throw new BackendApiError(`Download failed (${response.status})`, response.status);
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 export async function backendRequest<T>(
   path: string,
   options: RequestInit & { tenantId?: string | null } = {},

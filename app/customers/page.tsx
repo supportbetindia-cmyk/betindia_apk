@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { ChangeEvent, FormEvent, useRef, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { Clock3, Search, Upload, Users } from 'lucide-react';
+import { Clock3, Download, Search, Upload, Users } from 'lucide-react';
 import { Sidebar } from '@/components/Sidebar';
 import { useMasterFilter } from '@/components/MasterFilterProvider';
 import { withMaster } from '@/lib/master-filter';
@@ -12,7 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { useAuthRedirect } from '@/hooks/useAuthRedirect';
 import { money as inr, day } from '@/lib/format';
-import { backendRequest } from '@/lib/backend-api';
+import { backendRequest, backendDownload } from '@/lib/backend-api';
 import { parseUsersCsv } from '@/lib/user-file';
 
 // Player figures can carry paise → show 2 decimals.
@@ -107,6 +107,7 @@ export default function CustomersPage() {
   const [missingReg, setMissingReg] = useState(false);
   const [stage, setStage] = useState('');
   const [activity, setActivity] = useState('');
+  const [exporting, setExporting] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const { tenantId, masterId, scopedHref } = useMasterFilter();
 
@@ -188,6 +189,25 @@ export default function CustomersPage() {
     setSearch(draftSearch.trim());
   }
 
+  // Download all players matching the CURRENT filters as CSV (not just this page).
+  async function exportCsv() {
+    if (!tenantId) return;
+    setExporting(true);
+    setImportResult(null);
+    try {
+      const params = new URLSearchParams();
+      if (search) params.set('search', search);
+      if (missingReg) params.set('missingRegistration', 'true');
+      if (stage) params.set('stage', stage);
+      if (activity) params.set('activity', activity);
+      await backendDownload(withMaster(`/customers/export?${params.toString()}`, masterId), 'players.csv', tenantId);
+    } catch (error) {
+      setImportResult(error instanceof Error ? error.message : 'Export failed');
+    } finally {
+      setExporting(false);
+    }
+  }
+
   async function importLegacyCustomers() {
     setImporting('customers');
     setImportResult(null);
@@ -245,6 +265,10 @@ export default function CustomersPage() {
               <Button onClick={() => fileRef.current?.click()} disabled={busy}>
                 <Upload size={15} style={{ marginRight: 6 }} />
                 {csvUpload.isPending ? 'Uploading…' : 'Upload CSV'}
+              </Button>
+              <Button variant="outline" onClick={exportCsv} disabled={busy || exporting}>
+                <Download size={15} style={{ marginRight: 6 }} />
+                {exporting ? 'Exporting…' : 'Export CSV'}
               </Button>
               <Button variant="outline" onClick={importLegacyCustomers} disabled={busy}>
                 {importing === 'customers' ? 'Importing…' : 'Import customers'}
