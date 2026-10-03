@@ -53,12 +53,29 @@ type CustomerList = {
 };
 type ScheduleStatus = { enabled: boolean; timezone: string; atRiskDays: number; inactiveDays: number; lastRunAt: string | null };
 
-async function loadCustomers(search: string, page: number, pageSize: number, missingReg: boolean, stage: string, activity: string, masterId: string, tenantId: string | null, signal: AbortSignal): Promise<CustomerList> {
-  const query = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
-  if (search) query.set('search', search);
-  if (missingReg) query.set('missingRegistration', 'true');
-  if (stage) query.set('stage', stage);
-  if (activity) query.set('activity', activity);
+type PlayerFilters = {
+  search: string; missingReg: boolean; stage: string; activity: string;
+  tier: string; quietDays: string; hasPhone: boolean;
+};
+
+// Shared query-string builder for the player filters — used by BOTH the list fetch and
+// the CSV export, so they can never drift apart (mirrors the backend's shared listWhere).
+function playerFilterParams(f: PlayerFilters): URLSearchParams {
+  const p = new URLSearchParams();
+  if (f.search) p.set('search', f.search);
+  if (f.missingReg) p.set('missingRegistration', 'true');
+  if (f.stage) p.set('stage', f.stage);
+  if (f.activity) p.set('activity', f.activity);
+  if (f.tier) p.set('tier', f.tier);
+  if (f.quietDays) p.set('quietDays', f.quietDays);
+  if (f.hasPhone) p.set('hasPhone', 'true');
+  return p;
+}
+
+async function loadCustomers(f: PlayerFilters, page: number, pageSize: number, masterId: string, tenantId: string | null, signal: AbortSignal): Promise<CustomerList> {
+  const query = playerFilterParams(f);
+  query.set('page', String(page));
+  query.set('pageSize', String(pageSize));
   return backendRequest<CustomerList>(withMaster(`/customers?${query.toString()}`, masterId), { tenantId, signal });
 }
 
@@ -107,13 +124,17 @@ export default function CustomersPage() {
   const [missingReg, setMissingReg] = useState(false);
   const [stage, setStage] = useState('');
   const [activity, setActivity] = useState('');
+  const [tier, setTier] = useState('');
+  const [quietDays, setQuietDays] = useState('');
+  const [hasPhone, setHasPhone] = useState(false);
   const [exporting, setExporting] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const { tenantId, masterId, scopedHref } = useMasterFilter();
 
+  const filters: PlayerFilters = { search, missingReg, stage, activity, tier, quietDays, hasPhone };
   const query = useQuery({
-    queryKey: ['backend-customers', tenantId, search, page, pageSize, missingReg, stage, activity, masterId],
-    queryFn: ({ signal }) => loadCustomers(search, page, pageSize, missingReg, stage, activity, masterId, tenantId, signal),
+    queryKey: ['backend-customers', tenantId, page, pageSize, masterId, filters],
+    queryFn: ({ signal }) => loadCustomers(filters, page, pageSize, masterId, tenantId, signal),
     enabled: Boolean(tenantId),
   });
   const schedule = useQuery({
@@ -195,11 +216,8 @@ export default function CustomersPage() {
     setExporting(true);
     setImportResult(null);
     try {
-      const params = new URLSearchParams();
-      if (search) params.set('search', search);
-      if (missingReg) params.set('missingRegistration', 'true');
-      if (stage) params.set('stage', stage);
-      if (activity) params.set('activity', activity);
+      // Same builder as the list, so the export matches exactly what's filtered on screen.
+      const params = playerFilterParams(filters);
       await backendDownload(withMaster(`/customers/export?${params.toString()}`, masterId), 'players.csv', tenantId);
     } catch (error) {
       setImportResult(error instanceof Error ? error.message : 'Export failed');
@@ -315,16 +333,45 @@ export default function CustomersPage() {
                   <option value="">All stages</option>
                   {Object.entries(STAGE).map(([key, s]) => <option key={key} value={key}>{s.label}</option>)}
                 </select>
+                <select
+                  value={tier}
+                  onChange={(event) => { setPage(1); setTier(event.target.value); }}
+                  style={{ fontSize: 13, padding: '0 8px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', color: '#0f172a' }}
+                >
+                  <option value="">All tiers</option>
+                  {['VIP', 'Diamond', 'Platinum', 'Gold', 'Silver'].map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
+                <select
+                  value={quietDays}
+                  onChange={(event) => { setPage(1); setQuietDays(event.target.value); }}
+                  style={{ fontSize: 13, padding: '0 8px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', color: '#0f172a' }}
+                >
+                  <option value="">Any recency</option>
+                  <option value="15">Quiet 15+ days</option>
+                  <option value="30">Quiet 30+ days</option>
+                  <option value="60">Quiet 60+ days</option>
+                  <option value="90">Quiet 90+ days</option>
+                </select>
                 <Button type="submit">Search</Button>
               </form>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#475569', cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  checked={missingReg}
-                  onChange={(event) => { setPage(1); setMissingReg(event.target.checked); }}
-                />
-                Show only players with no join date
-              </label>
+              <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#475569', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={missingReg}
+                    onChange={(event) => { setPage(1); setMissingReg(event.target.checked); }}
+                  />
+                  No join date
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#475569', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={hasPhone}
+                    onChange={(event) => { setPage(1); setHasPhone(event.target.checked); }}
+                  />
+                  Has phone (messageable)
+                </label>
+              </div>
             </div>
           </div>
 
