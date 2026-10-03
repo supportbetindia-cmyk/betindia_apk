@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Bell, Check, RefreshCw } from 'lucide-react';
+import { Bell, Check, CheckCircle2, AlertTriangle, RefreshCw } from 'lucide-react';
 import { Sidebar } from '@/components/Sidebar';
 import { useMasterFilter } from '@/components/MasterFilterProvider';
 import { Button } from '@/components/ui/button';
@@ -13,6 +13,7 @@ type Alert = {
   id: string; type: string; severity: string; title: string; body: string | null;
   entity_id: string | null; value: string | null; acknowledged: boolean; created_at: string;
 };
+type HealthCheck = { name: string; label: string; ok: boolean; count: number; detail: string; severity: string };
 
 const SEV: Record<string, { color: string; bg: string; label: string }> = {
   high: { color: '#b91c1c', bg: '#fef2f2', label: 'High' },
@@ -38,7 +39,15 @@ export default function AlertsPage() {
     mutationFn: (id: string) => backendRequest(`/alerts/${id}/ack`, { method: 'POST' }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['alerts', tenantId] }),
   });
+  const health = useQuery({
+    queryKey: ['alerts-health', tenantId],
+    queryFn: ({ signal }) => backendRequest<HealthCheck[]>('/alerts/health', { tenantId, signal }),
+    enabled: Boolean(tenantId),
+    refetchInterval: 60_000,
+  });
   useAuthRedirect(query.error);
+  const checks = health.data ?? [];
+  const failing = checks.filter((c) => !c.ok).length;
 
   const alerts = query.data ?? [];
   const open = alerts.filter((a) => !a.acknowledged);
@@ -59,6 +68,32 @@ export default function AlertsPage() {
 
         {!tenantId ? <div className="banner2">Select a company first.</div> : null}
         {check.data ? <div className="banner2 banner-ok">Checked — {check.data.created} new alert{check.data.created === 1 ? '' : 's'}.</div> : null}
+
+        {/* Health / drift monitor — pass/fail board for the silent-data-problem checks. */}
+        <div className="panel">
+          <div className="panel-head">
+            <div>
+              <h3 style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                {failing === 0 ? <CheckCircle2 size={16} color="#15803d" /> : <AlertTriangle size={16} color="#b91c1c" />}
+                Data health
+              </h3>
+              <div className="page-sub" style={{ margin: '4px 0 0' }}>
+                {checks.length === 0 ? 'Checking…' : failing === 0 ? 'All checks passing — no drift detected.' : `${failing} check${failing === 1 ? '' : 's'} need attention.`}
+              </div>
+            </div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 10 }}>
+            {checks.map((c) => (
+              <div key={c.name} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '11px 13px', borderRadius: 10, border: '1px solid var(--border)', background: c.ok ? '#f6fef9' : '#fef2f2' }}>
+                <span style={{ marginTop: 2, flex: '0 0 auto' }}>{c.ok ? <CheckCircle2 size={15} color="#15803d" /> : <AlertTriangle size={15} color="#b91c1c" />}</span>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1f36' }}>{c.label}</div>
+                  <div className="page-sub" style={{ margin: '2px 0 0', fontSize: 11.5, color: c.ok ? '#475569' : '#b91c1c' }}>{c.detail}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
 
         <div className="panel">
           <div className="panel-head">
