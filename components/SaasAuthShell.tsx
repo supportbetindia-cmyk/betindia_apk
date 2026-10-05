@@ -4,7 +4,7 @@ import { BarChart3, ShieldCheck, Workflow } from 'lucide-react';
 export function SaasAuthShell({ title, subtitle, alternate, children }: {
   title: string;
   subtitle: string;
-  alternate: { prompt: string; label: string; href: string };
+  alternate?: { prompt: string; label: string; href: string };
   children: React.ReactNode;
 }) {
   return <main className="saas-auth">
@@ -27,7 +27,7 @@ export function SaasAuthShell({ title, subtitle, alternate, children }: {
         <div className="saas-auth-mobile-brand"><span>CI</span><b>Customer Intelligence</b></div>
         <div className="saas-auth-heading"><h2>{title}</h2><p>{subtitle}</p></div>
         {children}
-        <p className="saas-auth-alternate">{alternate.prompt} <Link href={alternate.href}>{alternate.label}</Link></p>
+        {alternate ? <p className="saas-auth-alternate">{alternate.prompt} <Link href={alternate.href}>{alternate.label}</Link></p> : null}
       </div>
     </section>
   </main>;
