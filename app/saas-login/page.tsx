@@ -22,10 +22,21 @@ export default function SaasLoginPage() {
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const marker = window.location.hash + window.location.search;
-    if (/type=(invite|recovery|signup)/.test(marker)) {
+    // GoTrue's invite/recovery links redirect here with the session as implicit tokens
+    // in the URL hash (#access_token=...&type=invite). The PKCE client won't pick those
+    // up on its own, so parse them and set the session explicitly.
+    const params = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+    const type = params.get('type');
+    const errorDescription = params.get('error_description');
+    const accessToken = params.get('access_token');
+    const refreshToken = params.get('refresh_token');
+
+    if (errorDescription) { setAcceptInvite(true); setError(decodeURIComponent(errorDescription)); return; }
+    if (/^(invite|recovery|signup)$/.test(type ?? '') || (accessToken && refreshToken)) {
       setAcceptInvite(true);
-      getSupabaseBrowser(); // instantiate now so the client consumes the URL session before submit
+      if (accessToken && refreshToken) {
+        getSupabaseBrowser().auth.setSession({ access_token: accessToken, refresh_token: refreshToken }).catch(() => undefined);
+      }
     }
   }, []);
 
