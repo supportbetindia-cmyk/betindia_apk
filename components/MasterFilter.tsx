@@ -6,6 +6,8 @@ import { usePathname } from 'next/navigation';
 import { backendRequest } from '@/lib/backend-api';
 import { useMasterFilter } from './MasterFilterProvider';
 
+const NONE: string[] = [];
+
 export function MasterFilter() {
   const { masterId, tenantId, setMasterId } = useMasterFilter();
   const pathname = usePathname();
@@ -17,7 +19,7 @@ export function MasterFilter() {
     enabled: Boolean(tenantId),
     staleTime: 60_000,
   });
-  const masters = query.data?.masters ?? [];
+  const masters = query.data?.masters ?? NONE;
   const restricted = query.data?.restricted ?? false;
   // A restricted member has no "All Masters" view; pin them to one of their own.
   useEffect(() => {

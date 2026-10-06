@@ -98,7 +98,7 @@ export default function TeamPage() {
             {role !== 'OWNER' ? <div className="team-field">Master access<MasterPicker options={masters.data ?? []} value={masterIds} onChange={setMasterIds} /></div> : null}
             <button className="btn-primary" disabled={invite.isPending || !email.trim()}>{invite.isPending ? 'Inviting…' : 'Send invitation'}</button>
           </form>
-          <div className="team-role-help"><b>Owner</b> full control · <b>Admin</b> manages operations and users · <b>Manager</b> manages customers and transactions · <b>Viewer</b> read-only<br />Members limited to specific masters see only those masters' players and numbers. Owners always see everything.</div>
+          <div className="team-role-help"><b>Owner</b> full control · <b>Admin</b> manages operations and users · <b>Manager</b> manages customers and transactions · <b>Viewer</b> read-only<br />Members limited to specific masters see only the players and numbers of those masters. Owners always see everything.</div>
         </section>
 
         <section className="panel team-list">
