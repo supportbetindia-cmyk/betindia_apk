@@ -13,6 +13,7 @@ type Member = {
   id: string;
   role: Role;
   status: 'ACTIVE' | 'INVITED';
+  masterIds: string[];
   createdAt: string;
   user: { id: string; email: string; name: string | null };
 };
@@ -23,7 +24,15 @@ export default function TeamPage() {
   const tenantId = getSelectedTenantId();
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<Role>('VIEWER');
+  const [masterIds, setMasterIds] = useState<string[]>([]);
   const [notice, setNotice] = useState('');
+
+  const masters = useQuery({
+    queryKey: ['masters', tenantId],
+    queryFn: () => backendRequest<string[] | { masters: string[] }>('/customers/masters'),
+    enabled: Boolean(tenantId),
+    select: (data) => (Array.isArray(data) ? data : data.masters),
+  });
 
   const team = useQuery({
     queryKey: ['team', tenantId],
@@ -33,11 +42,12 @@ export default function TeamPage() {
 
   const invite = useMutation({
     mutationFn: () => backendRequest<Member & { emailSent: boolean }>('/team/invite', {
-      method: 'POST', body: JSON.stringify({ email: email.trim(), role }),
+      method: 'POST', body: JSON.stringify({ email: email.trim(), role, masterIds }),
     }),
     onSuccess: (member) => {
       setEmail('');
       setRole('VIEWER');
+      setMasterIds([]);
       setNotice(member.emailSent ? 'Invitation email sent.' : member.status === 'ACTIVE' ? 'Existing user added to the team.' : 'Invitation saved. Configure the Supabase service-role key to send invitation emails.');
       queryClient.invalidateQueries({ queryKey: ['team', tenantId] });
     },
@@ -50,12 +60,19 @@ export default function TeamPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['team', tenantId] }),
   });
 
+  const changeMasters = useMutation({
+    mutationFn: ({ id, ids }: { id: string; ids: string[] }) => backendRequest(`/team/${id}/masters`, {
+      method: 'PATCH', body: JSON.stringify({ masterIds: ids }),
+    }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['team', tenantId] }),
+  });
+
   const remove = useMutation({
     mutationFn: (id: string) => backendRequest(`/team/${id}`, { method: 'DELETE' }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['team', tenantId] }),
   });
 
-  const error = team.error || invite.error || changeRole.error || remove.error;
+  const error = team.error || invite.error || changeRole.error || changeMasters.error || remove.error;
   useEffect(() => {
     if (error instanceof BackendApiError && error.status === 401) router.replace('/saas-login');
   }, [error, router]);
@@ -78,9 +95,10 @@ export default function TeamPage() {
           <form onSubmit={(event) => { event.preventDefault(); setNotice(''); invite.mutate(); }}>
             <label>Email address<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="person@company.com" required /></label>
             <label>Role<select value={role} onChange={(event) => setRole(event.target.value as Role)}>{ROLES.map((value) => <option key={value} value={value}>{roleName(value)}</option>)}</select></label>
+            {role !== 'OWNER' ? <div className="team-field">Master access<MasterPicker options={masters.data ?? []} value={masterIds} onChange={setMasterIds} /></div> : null}
             <button className="btn-primary" disabled={invite.isPending || !email.trim()}>{invite.isPending ? 'Inviting…' : 'Send invitation'}</button>
           </form>
-          <div className="team-role-help"><b>Owner</b> full control · <b>Admin</b> manages operations and users · <b>Manager</b> manages customers and transactions · <b>Viewer</b> read-only</div>
+          <div className="team-role-help"><b>Owner</b> full control · <b>Admin</b> manages operations and users · <b>Manager</b> manages customers and transactions · <b>Viewer</b> read-only<br />Members limited to specific masters see only those masters' players and numbers. Owners always see everything.</div>
         </section>
 
         <section className="panel team-list">
@@ -90,6 +108,8 @@ export default function TeamPage() {
             <div className="team-avatar">{member.user.email.slice(0, 1).toUpperCase()}</div>
             <div className="team-person"><b>{member.user.name || member.user.email}</b>{member.user.name ? <span>{member.user.email}</span> : null}</div>
             <span className={`team-status ${member.status.toLowerCase()}`}>{member.status === 'ACTIVE' ? 'Active' : 'Invited'}</span>
+            {member.role === 'OWNER' ? <span className="team-masters-all">All masters</span>
+              : <MasterPicker options={masters.data ?? []} value={member.masterIds} disabled={changeMasters.isPending} onChange={(ids) => changeMasters.mutate({ id: member.id, ids })} />}
             <select aria-label={`Role for ${member.user.email}`} value={member.role} disabled={changeRole.isPending} onChange={(event) => changeRole.mutate({ id: member.id, nextRole: event.target.value as Role })}>
               {ROLES.map((value) => <option key={value} value={value}>{roleName(value)}</option>)}
             </select>
@@ -100,6 +120,20 @@ export default function TeamPage() {
       </div> : null}
     </main>
   </div>;
+}
+
+// Native <details> dropdown of master checkboxes. Nothing ticked = all masters.
+function MasterPicker({ options, value, onChange, disabled }: { options: string[]; value: string[]; onChange: (ids: string[]) => void; disabled?: boolean }) {
+  const all = [...new Set([...options, ...value])];
+  const toggle = (id: string) => onChange(value.includes(id) ? value.filter((v) => v !== id) : [...value, id]);
+  return <details className="master-picker">
+    <summary>{value.length ? value.join(', ') : 'All masters'}</summary>
+    <div>
+      {all.length === 0 ? <small>No masters found yet.</small> : null}
+      {all.map((id) => <label key={id}><input type="checkbox" checked={value.includes(id)} disabled={disabled} onChange={() => toggle(id)} />{id}</label>)}
+      {value.length ? <button type="button" disabled={disabled} onClick={() => onChange([])}>Allow all masters</button> : null}
+    </div>
+  </details>;
 }
 
 function roleName(role: Role) {
