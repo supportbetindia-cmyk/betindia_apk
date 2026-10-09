@@ -43,7 +43,7 @@ P('That is the whole task. Details below.')
 P('Step 1 &mdash; Add the tracking script', h2)
 P('Place this line in the <b>&lt;head&gt;</b> of the site (and the app\'s web view), so it loads on '
   'every page. It must load as early as possible so the landing-page URL parameters are still present.')
-CP('&lt;script src="https://admin.betindia.games/utm.js" async&gt;&lt;/script&gt;')
+CP('&lt;script src="https://manageflow.in/utm.js" async&gt;&lt;/script&gt;')
 P('The script automatically reads UTM parameters (utm_source, utm_medium, utm_campaign, utm_term, '
   'utm_content) from the URL, remembers the first-touch and last-touch source, and reports it to our '
   'endpoint. No other configuration is needed.')
@@ -79,8 +79,8 @@ B('<b>3.</b> Tell us the test user id &mdash; we will confirm a row appears in o
   'source = "whatsapp" linked to that user. That confirms both steps work.')
 
 P('Endpoints (for your reference)', h2)
-B('Script: <font face="Courier">https://admin.betindia.games/utm.js</font>')
-B('Data endpoint: <font face="Courier">https://admin.betindia.games/api/track/utm</font> (CORS-enabled, POST)')
+B('Script: <font face="Courier">https://manageflow.in/utm.js</font>')
+B('Data endpoint: <font face="Courier">https://manageflow.in/api/track/utm</font> (CORS-enabled, POST)')
 
 gap(12)
 s.append(HRFlowable(width='100%', color=colors.HexColor('#d9dee8'), spaceAfter=6))
