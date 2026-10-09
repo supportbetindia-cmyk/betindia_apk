@@ -2,6 +2,7 @@
  * Add to the site with: <script src="https://manageflow.in/utm.js" async></script>
  * Captures first-touch + last-touch UTM source and beacons it to your dashboard.
  * When your site knows the logged-in user, call: window.biIdentify(userId)
+ * Endpoint: https://manageflow.in/api/track/utm
  */
 (function () {
   var ENDPOINT = 'https://manageflow.in/api/track/utm';
