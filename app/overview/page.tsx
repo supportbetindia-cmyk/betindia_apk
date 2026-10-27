@@ -1,11 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowDownRight, ArrowUpRight, Minus, X } from 'lucide-react';
 import { Sidebar } from '@/components/Sidebar';
 import { useMasterFilter } from '@/components/MasterFilterProvider';
-import { PeriodTabs } from '@/components/saas/PeriodTabs';
+import { DateRangeFilter } from '@/components/saas/DateRangeFilter';
+import { useDateRange } from '@/hooks/useDateRange';
+import { dashboardQuery } from '@/lib/console-range';
 import { useAuthRedirect } from '@/hooks/useAuthRedirect';
 import { money, count } from '@/lib/format';
 import { backendRequest } from '@/lib/backend-api';
@@ -32,32 +34,33 @@ type DetailRow = {
 };
 type Detail = { metric: string; kind: 'transactions' | 'customers'; label: string; rows: DetailRow[] };
 
-const PERIODS = [
-  { key: 'today', label: 'Today' },
-  { key: 'week', label: 'This week' },
-  { key: 'month', label: 'This month' },
-  { key: 'year', label: 'This year' },
-];
-
 export default function CompanyOverviewPage() {
+  return (
+    <Suspense fallback={<div className="shell"><Sidebar /><main className="main"><div className="panel"><div className="empty2">Loading…</div></div></main></div>}>
+      <OverviewInner />
+    </Suspense>
+  );
+}
+
+function OverviewInner() {
   const { tenantId, masterId, scopedHref } = useMasterFilter();
-  const [period, setPeriod] = useState('month');
+  const { range, preset, set, reset, isDefault } = useDateRange('thismonth');
   const [detail, setDetail] = useState<{ metric: string; title: string } | null>(null);
+  const dq = dashboardQuery(range);
 
   const query = useQuery({
-    queryKey: ['backend-overview', tenantId, period, masterId],
-    queryFn: ({ signal }) => backendRequest<Overview>(scopedHref(`/dashboard?period=${period}`), { tenantId, signal }),
+    queryKey: ['backend-overview', tenantId, dq, masterId],
+    queryFn: ({ signal }) => backendRequest<Overview>(scopedHref(`/dashboard?${dq}`), { tenantId, signal }),
     enabled: Boolean(tenantId),
   });
   useAuthRedirect(query.error);
 
   const detailsQuery = useQuery({
-    queryKey: ['overview-details', tenantId, period, detail?.metric, masterId],
-    queryFn: ({ signal }) => backendRequest<Detail>(scopedHref(`/dashboard/details?period=${period}&metric=${detail!.metric}`), { tenantId, signal }),
+    queryKey: ['overview-details', tenantId, dq, detail?.metric, masterId],
+    queryFn: ({ signal }) => backendRequest<Detail>(scopedHref(`/dashboard/details?${dq}&metric=${detail!.metric}`), { tenantId, signal }),
     enabled: Boolean(tenantId && detail),
   });
   const d = query.data;
-  console.log(d)
   const open = (metric: string, title: string) => setDetail({ metric, title });
 
   return (
@@ -67,9 +70,9 @@ export default function CompanyOverviewPage() {
         <header className="topbar2">
           <div>
             <h1 className="page-title">Company overview</h1>
-            <p className="page-sub">How the business is doing{d ? ` — ${d.label.toLowerCase()}` : ''}</p>
+            <p className="page-sub">How the business is doing — {range.label.toLowerCase()}</p>
           </div>
-          <PeriodTabs value={period} onChange={setPeriod} options={PERIODS} />
+          <DateRangeFilter range={range} preset={preset} onSet={set} onReset={reset} isDefault={isDefault} />
         </header>
 
         {!tenantId ? <div className="banner2">Select a company on the SaaS console first.</div> : null}
@@ -92,14 +95,14 @@ export default function CompanyOverviewPage() {
           </div>
 
           <p style={{ color: '#94a3b8', fontSize: 12, marginTop: 16 }}>
-            Tip: click any card to see the exact players and payments behind the number. Growth compares this {period === 'today' ? 'day' : period.replace('this ', '')} with the same length of time just before it. Only confirmed (successful) payments count.
+            Tip: click any card to see the exact players and payments behind the number. Growth compares this period with the same length of time just before it. Only confirmed (successful) payments count. Times in IST.
           </p>
         </> : null}
 
         {detail ? (
           <DetailModal
             title={detail.title}
-            periodLabel={d?.label ?? ''}
+            periodLabel={range.label}
             data={detailsQuery.data}
             loading={detailsQuery.isLoading}
             error={detailsQuery.error instanceof Error ? detailsQuery.error.message : null}

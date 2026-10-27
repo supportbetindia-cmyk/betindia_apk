@@ -1,7 +1,7 @@
 'use client';
 import { logout } from '@/lib/logout';
 
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Sidebar } from '@/components/Sidebar';
 import { useMasterFilter } from '@/components/MasterFilterProvider';
@@ -9,7 +9,6 @@ import { withMaster } from '@/lib/master-filter';
 import type { CSSProperties, ReactNode } from 'react';
 import {
   BadgeCheck,
-  CalendarDays,
   CircleHelp,
   CircleX,
   Download,
@@ -18,11 +17,9 @@ import {
   Upload,
 } from 'lucide-react';
 import { backendRequest } from '@/lib/backend-api';
-import {
-  TRANSACTION_RANGE_OPTIONS,
-  resolveTransactionRange,
-  type TransactionRangeKey,
-} from '@/lib/transaction-range';
+import { DateRangeFilter } from '@/components/saas/DateRangeFilter';
+import { useDateRange } from '@/hooks/useDateRange';
+import { fromToQuery, type ResolvedRange } from '@/lib/console-range';
 
 type Row = {
   id: string;
@@ -59,28 +56,34 @@ const statusClass = (status: Row['display_status']) =>
 
 // The active company is kept in the tenant header by backendRequest, so each
 // company shows its own transactions from the backend (saas schema).
-async function fetchTransactionData(range: TransactionRangeKey, masterId: string, tenantId: string | null, signal: AbortSignal): Promise<Data> {
-  const { from, to } = resolveTransactionRange(range);
-  const query = `from=${from ?? ''}&to=${to}`;
-  return backendRequest<Data>(withMaster(`/transactions/summary?${query}`, masterId), { tenantId, signal });
+async function fetchTransactionData(range: ResolvedRange, masterId: string, tenantId: string | null, signal: AbortSignal): Promise<Data> {
+  return backendRequest<Data>(withMaster(`/transactions/summary?${fromToQuery(range)}`, masterId), { tenantId, signal });
 }
 
 export default function TransactionsPage() {
+  return (
+    <Suspense fallback={<div className="shell"><Sidebar /><main className="main"><div className="panel"><div className="empty2">Loading…</div></div></main></div>}>
+      <TransactionsInner />
+    </Suspense>
+  );
+}
+
+function TransactionsInner() {
   const [filter, setFilter] = useState<'all' | 'deposit' | 'withdrawal'>('all');
-  const [range, setRange] = useState<TransactionRangeKey>('today');
   const [search, setSearch] = useState('');
   const [visibleCount, setVisibleCount] = useState(50);
   const { tenantId, masterId } = useMasterFilter();
+  const { range, preset, set, reset, isDefault } = useDateRange('today');
   const transactionQuery = useQuery({
-    // tenantId is in the key so switching company refetches instead of showing cache.
-    queryKey: ['transactions', tenantId, range, masterId],
+    // tenantId + range in the key so switching company/range refetches instead of caching.
+    queryKey: ['transactions', tenantId, range.from, range.to, masterId],
     queryFn: ({ signal }) => fetchTransactionData(range, masterId, tenantId, signal),
     enabled: Boolean(tenantId),
     refetchInterval: 30_000,
     refetchIntervalInBackground: false,
   });
   const data = transactionQuery.data;
-  const rangeLabel = resolveTransactionRange(range).label;
+  const rangeLabel = range.label;
 
   const s = data?.summary;
   const queryError = transactionQuery.error instanceof Error
@@ -110,22 +113,9 @@ export default function TransactionsPage() {
             <p className="page-sub">Deposits and withdrawals for this company · {rangeLabel}</p>
           </div>
           <div className="topbar-actions">
-            <label className="date-pill range-picker">
-              <CalendarDays size={15} />
-              <select
-                className="range-select"
-                aria-label="Transaction time period"
-                value={range}
-                onChange={(event) => {
-                  setRange(event.target.value as TransactionRangeKey);
-                  setVisibleCount(50);
-                }}
-              >
-                {TRANSACTION_RANGE_OPTIONS.map((option) => (
-                  <option key={option.key} value={option.key}>{option.label}</option>
-                ))}
-              </select>
-            </label>
+            <DateRangeFilter range={range} preset={preset}
+              onSet={(p, f, t) => { set(p, f, t); setVisibleCount(50); }}
+              onReset={() => { reset(); setVisibleCount(50); }} isDefault={isDefault} />
             <button className="logout-btn2" onClick={logout}><LogOut size={15} /><span>Log out</span></button>
           </div>
         </header>
