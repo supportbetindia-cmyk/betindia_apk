@@ -16,7 +16,7 @@ import {
   Search,
   Upload,
 } from 'lucide-react';
-import { backendRequest } from '@/lib/backend-api';
+import { backendDownload, backendRequest } from '@/lib/backend-api';
 import { DateRangeFilter } from '@/components/saas/DateRangeFilter';
 import { useDateRange } from '@/hooks/useDateRange';
 import { fromToQuery, type ResolvedRange } from '@/lib/console-range';
@@ -84,6 +84,24 @@ function TransactionsInner() {
   });
   const data = transactionQuery.data;
   const rangeLabel = range.label;
+  const [exporting, setExporting] = useState(false);
+
+  // Export the FULL filtered set (not just the rows on screen) — same date range,
+  // type filter and search the view uses. Auth + master scope enforced server-side.
+  async function exportCsv() {
+    setExporting(true);
+    try {
+      const parts = [fromToQuery(range)];
+      if (filter !== 'all') parts.push(`type=${filter}`);
+      const q = search.trim();
+      if (q) parts.push(`search=${encodeURIComponent(q)}`);
+      await backendDownload(
+        withMaster(`/transactions/export?${parts.join('&')}`, masterId),
+        `transactions-${range.preset}.csv`,
+        tenantId,
+      );
+    } finally { setExporting(false); }
+  }
 
   const s = data?.summary;
   const queryError = transactionQuery.error instanceof Error
@@ -164,6 +182,11 @@ function TransactionsInner() {
                       </button>
                     ))}
                   </div>
+                  <button className="txn-filter" onClick={exportCsv} disabled={exporting}
+                    title="Download all matching transactions (the whole filtered set, not just the rows shown) as CSV"
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    <Download size={14} /> {exporting ? 'Exporting…' : 'Export CSV'}
+                  </button>
                 </div>
               </div>
 

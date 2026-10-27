@@ -2,8 +2,9 @@
 
 import { Suspense, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowDownRight, ArrowUpRight, Minus, X } from 'lucide-react';
+import { ArrowDownRight, ArrowUpRight, Download, Minus, X } from 'lucide-react';
 import { Sidebar } from '@/components/Sidebar';
+import { downloadCsv } from '@/lib/csv';
 import { useMasterFilter } from '@/components/MasterFilterProvider';
 import { DateRangeFilter } from '@/components/saas/DateRangeFilter';
 import { useDateRange } from '@/hooks/useDateRange';
@@ -155,6 +156,17 @@ function DetailModal({ title, periodLabel, data, loading, error, onClose }: {
 }) {
   const rows = data?.rows ?? [];
   const isTxn = data?.kind === 'transactions';
+  function exportModal() {
+    if (!rows.length) return;
+    const cols = isTxn
+      ? ['type', 'transaction_id', 'user_name', 'user_id', 'phone', 'amount', 'status', 'occurred_at']
+      : ['user_name', 'user_id', 'phone', 'amount', 'txns', 'occurred_at'];
+    const flat = rows.map((r) => ({
+      type: r.type, transaction_id: r.txn_id, user_name: r.name, user_id: r.user_id,
+      phone: r.phone, amount: r.amount, status: r.status, txns: r.txns, occurred_at: r.occurred_at,
+    }));
+    downloadCsv(`${title.replace(/\s+/g, '-').toLowerCase()}.csv`, flat, cols);
+  }
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: 20 }}>
       <div onClick={(e) => e.stopPropagation()} style={{ background: '#fff', borderRadius: 14, width: 'min(920px, 100%)', maxHeight: '85vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.25)' }}>
@@ -163,7 +175,15 @@ function DetailModal({ title, periodLabel, data, loading, error, onClose }: {
             <div style={{ fontWeight: 800, fontSize: 18 }}>{title}</div>
             <div style={{ color: '#64748b', fontSize: 13 }}>{periodLabel}{data ? ` · ${rows.length} shown${rows.length >= 500 ? ' (first 500)' : ''}` : ''}</div>
           </div>
-          <button onClick={onClose} aria-label="Close" style={{ border: 0, background: '#f1f5f9', borderRadius: 8, width: 34, height: 34, cursor: 'pointer', display: 'grid', placeItems: 'center' }}><X size={18} /></button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {rows.length ? (
+              <button onClick={exportModal} aria-label="Export CSV" title="Export to CSV"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, border: '1px solid #e2e8f0', background: '#fff', borderRadius: 8, height: 34, padding: '0 12px', cursor: 'pointer', fontSize: 13, fontWeight: 600, color: '#475569' }}>
+                <Download size={15} /> CSV
+              </button>
+            ) : null}
+            <button onClick={onClose} aria-label="Close" style={{ border: 0, background: '#f1f5f9', borderRadius: 8, width: 34, height: 34, cursor: 'pointer', display: 'grid', placeItems: 'center' }}><X size={18} /></button>
+          </div>
         </div>
         <div style={{ overflow: 'auto', padding: '8px 20px 20px' }}>
           {loading ? <div className="empty2">Loading…</div> : null}
