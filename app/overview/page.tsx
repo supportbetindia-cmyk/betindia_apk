@@ -8,7 +8,7 @@ import { downloadCsv } from '@/lib/csv';
 import { useMasterFilter } from '@/components/MasterFilterProvider';
 import { DateRangeFilter } from '@/components/saas/DateRangeFilter';
 import { useDateRange } from '@/hooks/useDateRange';
-import { dashboardQuery } from '@/lib/console-range';
+import { dashboardQuery, resolveRange } from '@/lib/console-range';
 import { useAuthRedirect } from '@/hooks/useAuthRedirect';
 import { money, count } from '@/lib/format';
 import { backendRequest } from '@/lib/backend-api';
@@ -47,18 +47,21 @@ function OverviewInner() {
   const { tenantId, masterId, scopedHref } = useMasterFilter();
   const { range, preset, set, reset, isDefault } = useDateRange('thismonth');
   const [detail, setDetail] = useState<{ metric: string; title: string } | null>(null);
-  const dq = dashboardQuery(range);
+  // Stable key (preset + custom dates) — NOT the live range.to, which changes every
+  // render and would cause an infinite refetch loop. Resolve the window at fetch time.
+  const rangeKey = `${preset}|${range.customFrom ?? ''}|${range.customTo ?? ''}`;
+  const dq = () => dashboardQuery(resolveRange(preset, range.customFrom, range.customTo));
 
   const query = useQuery({
-    queryKey: ['backend-overview', tenantId, dq, masterId],
-    queryFn: ({ signal }) => backendRequest<Overview>(scopedHref(`/dashboard?${dq}`), { tenantId, signal }),
+    queryKey: ['backend-overview', tenantId, rangeKey, masterId],
+    queryFn: ({ signal }) => backendRequest<Overview>(scopedHref(`/dashboard?${dq()}`), { tenantId, signal }),
     enabled: Boolean(tenantId),
   });
   useAuthRedirect(query.error);
 
   const detailsQuery = useQuery({
-    queryKey: ['overview-details', tenantId, dq, detail?.metric, masterId],
-    queryFn: ({ signal }) => backendRequest<Detail>(scopedHref(`/dashboard/details?${dq}&metric=${detail!.metric}`), { tenantId, signal }),
+    queryKey: ['overview-details', tenantId, rangeKey, detail?.metric, masterId],
+    queryFn: ({ signal }) => backendRequest<Detail>(scopedHref(`/dashboard/details?${dq()}&metric=${detail!.metric}`), { tenantId, signal }),
     enabled: Boolean(tenantId && detail),
   });
   const d = query.data;
