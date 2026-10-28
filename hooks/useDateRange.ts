@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { isValidPreset, resolveRange, type RangePreset } from '@/lib/console-range';
 
@@ -20,7 +20,10 @@ export function useDateRange(defaultPreset: RangePreset = '30d') {
   const preset: RangePreset = isValidPreset(rawPreset) ? rawPreset : defaultPreset;
   const from = sp.get('from') ?? undefined;
   const to = sp.get('to') ?? undefined;
-  const range = resolveRange(preset, from, to);
+  // Memoize so `range` (incl. its `to`=now snapshot) is STABLE across renders and only
+  // recomputes when preset/from/to actually change. This makes it safe to put the range
+  // in a React Query key — no more infinite-refetch loops from a live Date.now().
+  const range = useMemo(() => resolveRange(preset, from, to), [preset, from, to]);
 
   const set = useCallback((nextPreset: RangePreset, customFrom?: string, customTo?: string) => {
     const params = new URLSearchParams(sp.toString());
