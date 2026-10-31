@@ -13,6 +13,7 @@ export type BackendTenant = {
   role: string;
   status?: string;
   weekStartDay?: number; // 0=Sun .. 6=Sat (from /me)
+  lossCommissionPct?: number; // loss-commission rate %, from /me
 };
 
 export type BackendMe = {

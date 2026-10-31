@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { Sidebar } from '@/components/Sidebar';
 import { useMasterFilter } from '@/components/MasterFilterProvider';
+import { useLossCommissionRate } from '@/hooks/useLossCommissionRate';
 import { withMaster } from '@/lib/master-filter';
 import { backendRequest } from '@/lib/backend-api';
 import { CsvMatch } from '@/components/CsvMatch';
@@ -78,15 +79,15 @@ type SortDir = 'asc' | 'desc';
 const NUM_KEYS: SortKey[] = ['firstDepositAmount', 'depositTotal', 'withdrawalTotal', 'pnl'];
 const DATE_KEYS: SortKey[] = ['registerDate', 'lastActivityAt'];
 
-// Loss commission = 3% of the player's net loss (deposits − withdrawals), only
-// when they are net-down. No commission when the player is net-up.
-const LOSS_COMMISSION_RATE = 0.03;
-const lossCommission = (pnl: number) => (pnl > 0 ? Math.round(pnl * LOSS_COMMISSION_RATE) : 0);
+// Loss commission = ratePct% of the player's net loss (deposits − withdrawals),
+// only when they are net-down. No commission when the player is net-up.
+// ratePct is the company's configured rate (Admin panel), default 3.
+const lossCommission = (pnl: number, ratePct: number) => (pnl > 0 ? Math.round(pnl * ratePct / 100) : 0);
 
-function compareRows(a: UserRow, b: UserRow, key: SortKey, dir: SortDir): number {
+function compareRows(a: UserRow, b: UserRow, key: SortKey, dir: SortDir, ratePct: number): number {
   const mult = dir === 'asc' ? 1 : -1;
   if (key === 'name') return mult * (a.name ?? a.userId).localeCompare(b.name ?? b.userId);
-  if (key === 'lossCommission') return mult * (lossCommission(a.pnl) - lossCommission(b.pnl));
+  if (key === 'lossCommission') return mult * (lossCommission(a.pnl, ratePct) - lossCommission(b.pnl, ratePct));
   if (NUM_KEYS.includes(key)) {
     const av = (a[key] as number | null) ?? -Infinity;
     const bv = (b[key] as number | null) ?? -Infinity;
@@ -103,6 +104,8 @@ function compareRows(a: UserRow, b: UserRow, key: SortKey, dir: SortDir): number
 
 export default function AnalyticsPage() {
   const { masterId } = useMasterFilter();
+  const commRate = useLossCommissionRate(); // company-configured %, default 3
+  const comm = useCallback((pnl: number) => lossCommission(pnl, commRate), [commRate]);
   const router = useRouter();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
@@ -197,8 +200,8 @@ export default function AnalyticsPage() {
   }, [tableSource, search, statusFilter]);
 
   const sorted = useMemo(
-    () => [...filtered].sort((a, b) => compareRows(a, b, sortKey, sortDir)),
-    [filtered, sortKey, sortDir]
+    () => [...filtered].sort((a, b) => compareRows(a, b, sortKey, sortDir, commRate)),
+    [filtered, sortKey, sortDir, commRate]
   );
 
   const rows = sorted.slice(0, visibleCount);
@@ -226,12 +229,12 @@ export default function AnalyticsPage() {
   }, []);
 
   const downloadCsv = useCallback(() => {
-    const head = 'User_ID,Master_ID,Name,Mobile,Registered,First_Deposit_Amount,First_Deposit_Date,Deposits,Deposit_Count,Withdrawals,Withdrawal_Count,PnL,Loss_Commission_3pct,Last_Active,Status,Last_Remark\n';
+    const head = `User_ID,Master_ID,Name,Mobile,Registered,First_Deposit_Amount,First_Deposit_Date,Deposits,Deposit_Count,Withdrawals,Withdrawal_Count,PnL,Loss_Commission_${commRate}pct,Last_Active,Status,Last_Remark\n`;
     const esc = (v: string) => `"${v.replace(/"/g, '""')}"`;
     const body = sorted.map((r) => [
       r.userId, r.branchId ?? '', esc(r.name ?? ''), r.mobile ?? '', r.registerDate ?? '',
       r.firstDepositAmount ?? '', r.firstDepositAt ?? '',
-      r.depositTotal, r.depositCount, r.withdrawalTotal, r.withdrawalCount, r.pnl, lossCommission(r.pnl),
+      r.depositTotal, r.depositCount, r.withdrawalTotal, r.withdrawalCount, r.pnl, comm(r.pnl),
       r.lastActivityAt ?? '', r.status, esc(r.lastRemark ?? ''),
     ].join(',')).join('\n');
     const blob = new Blob([head + body], { type: 'text/csv;charset=utf-8;' });
@@ -241,11 +244,11 @@ export default function AnalyticsPage() {
     a.download = `user-analytics-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
-  }, [sorted]);
+  }, [sorted, comm, commRate]);
 
   const totalLossComm = useMemo(
-    () => (data?.users ?? []).reduce((s, r) => s + lossCommission(r.pnl), 0),
-    [data]
+    () => (data?.users ?? []).reduce((s, r) => s + comm(r.pnl), 0),
+    [data, comm]
   );
 
   // Left-rail clicks: apply a lifetime status filter, or an activity date scope.
@@ -337,7 +340,7 @@ export default function AnalyticsPage() {
                 <div className="report-item report-item-static"><span>Total Deposits</span><span className="report-badge">{money(t?.depositTotal ?? 0)}</span></div>
                 <div className="report-item report-item-static"><span>Total Withdrawals</span><span className="report-badge">{money(t?.withdrawalTotal ?? 0)}</span></div>
                 <div className="report-item report-item-static"><span>Net P/L (house)</span><span className="report-badge">{money(t?.netPnl ?? 0)}</span></div>
-                <div className="report-item report-item-static"><span>Loss Commission 3%</span><span className="report-badge">{money(totalLossComm)}</span></div>
+                <div className="report-item report-item-static"><span>Loss Commission {commRate}%</span><span className="report-badge">{money(totalLossComm)}</span></div>
               </aside>
 
               <div className="report-main">
@@ -437,7 +440,7 @@ export default function AnalyticsPage() {
                     <SortTh label="Deposits" k="depositTotal" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                     <SortTh label="Withdrawals" k="withdrawalTotal" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                     <SortTh label="P/L" k="pnl" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
-                    <SortTh label="Loss Comm. 3%" k="lossCommission" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                    <SortTh label={`Loss Comm. ${commRate}%`} k="lossCommission" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                     <SortTh label="Last Active" k="lastActivityAt" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                     <span>Status</span><span>Last Remark</span>
                   </div>
@@ -456,7 +459,7 @@ export default function AnalyticsPage() {
                       <span className="txn-amt">{r.depositCount ? money(r.depositTotal) : '—'}</span>
                       <span className="txn-amt">{r.withdrawalCount ? money(r.withdrawalTotal) : '—'}</span>
                       <span className={`txn-amt ${r.pnl >= 0 ? 'ua-pos' : 'ua-neg'}`}>{money(r.pnl)}</span>
-                      <span className="txn-amt">{lossCommission(r.pnl) ? money(lossCommission(r.pnl)) : '—'}</span>
+                      <span className="txn-amt">{comm(r.pnl) ? money(comm(r.pnl)) : '—'}</span>
                       <span className="txn-mono">{dateShort(r.lastActivityAt)}</span>
                       <span className={`notif-status ${STATUS_CLASS[r.status]}`}>{STATUS_LABEL[r.status]}</span>
                       <span className="ua-remark" title={r.lastRemark ?? ''}>{r.lastRemark ?? '—'}</span>

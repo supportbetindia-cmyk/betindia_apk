@@ -66,6 +66,20 @@ export default function AdminPage() {
     },
   });
 
+  // "Loss commission" — % of a player's weekly net loss paid back (Analytics page).
+  const [commDraft, setCommDraft] = useState<number | null>(null);
+  const currentComm = me.data?.tenants.find((t) => t.id === tenantId)?.lossCommissionPct ?? 3;
+  useEffect(() => { if (me.data && commDraft === null) setCommDraft(currentComm); }, [me.data, commDraft, currentComm]);
+  const saveComm = useMutation({
+    mutationFn: (lossCommissionPct: number) =>
+      backendRequest<{ lossCommissionPct: number }>('/tenants/current/settings', { method: 'PUT', body: JSON.stringify({ lossCommissionPct }) }),
+    onSuccess: (saved) => {
+      setCommDraft(saved.lossCommissionPct);
+      setNotice(`Saved. Loss commission is now ${saved.lossCommissionPct}% for this company.`);
+      queryClient.invalidateQueries({ queryKey: ['me', tenantId] });
+    },
+  });
+
   const save = useMutation({
     mutationFn: (cfg: Config) => backendRequest<Config>('/classification/config', { method: 'PUT', body: JSON.stringify(cfg) }),
     onSuccess: (saved) => {
@@ -82,7 +96,7 @@ export default function AdminPage() {
     },
   });
 
-  const error = config.error || summary.error || save.error || recompute.error || me.error || saveWeek.error;
+  const error = config.error || summary.error || save.error || recompute.error || me.error || saveWeek.error || saveComm.error;
   useEffect(() => {
     if (error instanceof BackendApiError && error.status === 401) router.replace('/saas-login');
   }, [error, router]);
@@ -174,6 +188,26 @@ export default function AdminPage() {
               <button className="btn-primary" disabled={saveWeek.isPending || weekDraft === null || weekDraft === currentWeekStart}
                 onClick={() => { setNotice(''); if (weekDraft !== null) saveWeek.mutate(weekDraft); }}>
                 {saveWeek.isPending ? 'Saving…' : 'Save week start'}
+              </button>
+            </div>
+          </div>
+        </section>
+
+        {/* ---- Loss commission (% of weekly net loss paid back) ---- */}
+        <section className="panel">
+          <div className="webhook-heading"><span><CalendarDays size={20} /></span><div>
+            <h2>Loss commission</h2><p>Percentage of a player’s net loss paid back to them. Shown on the Analytics report.</p>
+          </div></div>
+          <div style={{ display: 'grid', gap: 10, maxWidth: 360, marginTop: 8 }}>
+            <label style={{ fontSize: 14, color: '#334155' }}>
+              Commission rate (%)
+              <input type="number" min={0} max={100} value={commDraft ?? 3}
+                onChange={(e) => setCommDraft(Number(e.target.value))} style={inputStyle} />
+            </label>
+            <div>
+              <button className="btn-primary" disabled={saveComm.isPending || commDraft === null || commDraft === currentComm}
+                onClick={() => { setNotice(''); if (commDraft !== null) saveComm.mutate(commDraft); }}>
+                {saveComm.isPending ? 'Saving…' : 'Save commission rate'}
               </button>
             </div>
           </div>
