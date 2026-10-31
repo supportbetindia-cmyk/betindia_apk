@@ -63,10 +63,11 @@ function istYearStart(ms: number): number {
   return Date.UTC(d.getUTCFullYear(), 0, 1) - IST_OFFSET_MS;
 }
 
-/** Resolve a preset (or custom YYYY-MM-DD dates) into a concrete [from, to) window. */
-export function resolveRange(preset: RangePreset, customFrom?: string, customTo?: string, now = Date.now()): ResolvedRange {
+/** Resolve a preset (or custom YYYY-MM-DD dates) into a concrete [from, to) window.
+ * weekStartDay: 0=Sun..6=Sat, the day a week begins (company setting; default Monday). */
+export function resolveRange(preset: RangePreset, customFrom?: string, customTo?: string, now = Date.now(), weekStartDay = 1): ResolvedRange {
   const todayStart = istDayStart(now);
-  const weekStart = todayStart - ((istDow(now) + 6) % 7) * DAY; // Monday of this week
+  const weekStart = todayStart - ((istDow(now) - weekStartDay + 7) % 7) * DAY; // start of the configured week
   const monthStart = istMonthStart(now);
   let from = todayStart, to = now, label = 'Today';
 

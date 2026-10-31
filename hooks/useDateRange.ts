@@ -11,7 +11,7 @@ import { isValidPreset, resolveRange, type RangePreset } from '@/lib/console-ran
  *
  * NOTE: a page using this must render inside a <Suspense> boundary (useSearchParams).
  */
-export function useDateRange(defaultPreset: RangePreset = '30d') {
+export function useDateRange(defaultPreset: RangePreset = '30d', weekStartDay = 1) {
   const sp = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
@@ -23,7 +23,7 @@ export function useDateRange(defaultPreset: RangePreset = '30d') {
   // Memoize so `range` (incl. its `to`=now snapshot) is STABLE across renders and only
   // recomputes when preset/from/to actually change. This makes it safe to put the range
   // in a React Query key — no more infinite-refetch loops from a live Date.now().
-  const range = useMemo(() => resolveRange(preset, from, to), [preset, from, to]);
+  const range = useMemo(() => resolveRange(preset, from, to, Date.now(), weekStartDay), [preset, from, to, weekStartDay]);
 
   const set = useCallback((nextPreset: RangePreset, customFrom?: string, customTo?: string) => {
     const params = new URLSearchParams(sp.toString());

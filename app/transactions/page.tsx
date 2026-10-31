@@ -19,6 +19,7 @@ import {
 import { backendDownload, backendRequest } from '@/lib/backend-api';
 import { DateRangeFilter } from '@/components/saas/DateRangeFilter';
 import { useDateRange } from '@/hooks/useDateRange';
+import { useWeekStartDay } from '@/hooks/useWeekStartDay';
 import { fromToQuery, resolveRange, type ResolvedRange } from '@/lib/console-range';
 
 type Row = {
@@ -73,13 +74,14 @@ function TransactionsInner() {
   const [search, setSearch] = useState('');
   const [visibleCount, setVisibleCount] = useState(50);
   const { tenantId, masterId } = useMasterFilter();
-  const { range, preset, set, reset, isDefault } = useDateRange('today');
+  const weekStartDay = useWeekStartDay();
+  const { range, preset, set, reset, isDefault } = useDateRange('today', weekStartDay);
   const transactionQuery = useQuery({
     // Key on the STABLE preset/custom-dates — NOT the live `to` (Date.now()), which
     // would change every render and cause an infinite refetch loop. The window is
     // resolved fresh inside queryFn so `to` is current at fetch time.
-    queryKey: ['transactions', tenantId, preset, range.customFrom ?? '', range.customTo ?? '', masterId],
-    queryFn: ({ signal }) => fetchTransactionData(resolveRange(preset, range.customFrom, range.customTo), masterId, tenantId, signal),
+    queryKey: ['transactions', tenantId, preset, range.customFrom ?? '', range.customTo ?? '', masterId, weekStartDay],
+    queryFn: ({ signal }) => fetchTransactionData(resolveRange(preset, range.customFrom, range.customTo, Date.now(), weekStartDay), masterId, tenantId, signal),
     enabled: Boolean(tenantId),
     refetchInterval: 30_000,
     refetchIntervalInBackground: false,

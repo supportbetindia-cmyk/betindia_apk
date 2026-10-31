@@ -8,6 +8,7 @@ import { downloadCsv } from '@/lib/csv';
 import { useMasterFilter } from '@/components/MasterFilterProvider';
 import { DateRangeFilter } from '@/components/saas/DateRangeFilter';
 import { useDateRange } from '@/hooks/useDateRange';
+import { useWeekStartDay } from '@/hooks/useWeekStartDay';
 import { dashboardQuery, resolveRange } from '@/lib/console-range';
 import { useAuthRedirect } from '@/hooks/useAuthRedirect';
 import { money, count } from '@/lib/format';
@@ -45,12 +46,13 @@ export default function CompanyOverviewPage() {
 
 function OverviewInner() {
   const { tenantId, masterId, scopedHref } = useMasterFilter();
-  const { range, preset, set, reset, isDefault } = useDateRange('thismonth');
+  const weekStartDay = useWeekStartDay();
+  const { range, preset, set, reset, isDefault } = useDateRange('thismonth', weekStartDay);
   const [detail, setDetail] = useState<{ metric: string; title: string } | null>(null);
-  // Stable key (preset + custom dates) — NOT the live range.to, which changes every
-  // render and would cause an infinite refetch loop. Resolve the window at fetch time.
-  const rangeKey = `${preset}|${range.customFrom ?? ''}|${range.customTo ?? ''}`;
-  const dq = () => dashboardQuery(resolveRange(preset, range.customFrom, range.customTo));
+  // Stable key (preset + custom dates + week-start) — NOT the live range.to, which changes
+  // every render and would cause an infinite refetch loop. Resolve the window at fetch time.
+  const rangeKey = `${preset}|${range.customFrom ?? ''}|${range.customTo ?? ''}|${weekStartDay}`;
+  const dq = () => dashboardQuery(resolveRange(preset, range.customFrom, range.customTo, Date.now(), weekStartDay));
 
   const query = useQuery({
     queryKey: ['backend-overview', tenantId, rangeKey, masterId],
