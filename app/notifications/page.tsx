@@ -24,9 +24,7 @@ export default function NotificationsPage() {
             <h1 className="page-title">Push Notifications</h1>
             <p className="page-sub">Compose campaigns and monitor delivery performance</p>
           </div>
-          <div className="topbar-actions">
-            <button className="logout-btn2" onClick={logout}><LogOut size={15} /><span>Log out</span></button>
-          </div>
+          <div className="topbar-actions">          </div>
         </header>
 
         <Notifications />

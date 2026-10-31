@@ -274,9 +274,7 @@ export default function AnalyticsPage() {
           <div className="topbar-actions">
             <button className="btn-ghost" onClick={() => query.refetch()} disabled={query.isFetching}>
               <RefreshCw size={15} className={query.isFetching ? 'spin' : ''} /> Refresh
-            </button>
-            <button className="btn-ghost" onClick={logout}><LogOut size={15} /> Logout</button>
-          </div>
+            </button>          </div>
         </div>
 
         {query.isError ? (

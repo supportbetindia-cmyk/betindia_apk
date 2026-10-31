@@ -85,9 +85,7 @@ export default function WhatsAppPage() {
             <h1 className="page-title">WhatsApp CRM</h1>
             <p className="page-sub">Build customer segments and manage WhatsApp campaigns</p>
           </div>
-          <div className="topbar-actions">
-            <button className="logout-btn2" onClick={logout}><LogOut size={15} /><span>Log out</span></button>
-          </div>
+          <div className="topbar-actions">          </div>
         </header>
 
         {/* SEGMENTS */}

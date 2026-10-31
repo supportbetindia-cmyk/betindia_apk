@@ -176,9 +176,7 @@ export default function CampaignsPage() {
             <h1 className="page-title">Campaigns</h1>
             <p className="page-sub">Win-back &amp; first-deposit WhatsApp from your user list 📣</p>
           </div>
-          <div className="topbar-actions">
-            <button className="logout-btn2" onClick={logout}>Log out</button>
-          </div>
+          <div className="topbar-actions">          </div>
         </header>
 
         {error ? <div className="banner2" style={{ borderColor: '#e5484d', color: '#e5484d' }}>{error}</div> : null}

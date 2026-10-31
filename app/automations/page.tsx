@@ -300,9 +300,7 @@ export default function AutomationsPage() {
             <h1 className="page-title">Automations</h1>
             <p className="page-sub">Auto-WhatsApp on deposits &amp; withdrawals ⚡</p>
           </div>
-          <div className="topbar-actions">
-            <button className="logout-btn2" onClick={logout}>Log out</button>
-          </div>
+          <div className="topbar-actions">          </div>
         </header>
 
         {queryError ? (

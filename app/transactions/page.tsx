@@ -135,9 +135,7 @@ function TransactionsInner() {
           <div className="topbar-actions">
             <DateRangeFilter range={range} preset={preset}
               onSet={(p, f, t) => { set(p, f, t); setVisibleCount(50); }}
-              onReset={() => { reset(); setVisibleCount(50); }} isDefault={isDefault} />
-            <button className="logout-btn2" onClick={logout}><LogOut size={15} /><span>Log out</span></button>
-          </div>
+              onReset={() => { reset(); setVisibleCount(50); }} isDefault={isDefault} />          </div>
         </header>
 
         {queryError ? (
