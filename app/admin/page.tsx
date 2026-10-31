@@ -4,9 +4,11 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plus, RefreshCw, Trash2, Users, Webhook, MessageCircleMore, Building2, Sliders } from 'lucide-react';
+import { Plus, RefreshCw, Trash2, Users, Webhook, MessageCircleMore, Building2, Sliders, CalendarDays } from 'lucide-react';
 import { Sidebar } from '@/components/Sidebar';
-import { BackendApiError, backendRequest, getSelectedTenantId } from '@/lib/backend-api';
+import { BackendApiError, backendRequest, getSelectedTenantId, type BackendMe } from '@/lib/backend-api';
+
+const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 type Tier = { name: string; min: number };
 type Config = {
@@ -45,6 +47,25 @@ export default function AdminPage() {
   // Seed the editable form once the saved config loads.
   useEffect(() => { if (config.data && !draft) setDraft(config.data); }, [config.data, draft]);
 
+  // "Reporting week" — which weekday a week starts on (0=Sun..6=Sat).
+  const [weekDraft, setWeekDraft] = useState<number | null>(null);
+  const me = useQuery({
+    queryKey: ['me', tenantId],
+    queryFn: () => backendRequest<BackendMe>('/me', { tenantId: null }),
+    enabled: Boolean(tenantId),
+  });
+  const currentWeekStart = me.data?.tenants.find((t) => t.id === tenantId)?.weekStartDay ?? 1;
+  useEffect(() => { if (me.data && weekDraft === null) setWeekDraft(currentWeekStart); }, [me.data, weekDraft, currentWeekStart]);
+  const saveWeek = useMutation({
+    mutationFn: (weekStartDay: number) =>
+      backendRequest<{ weekStartDay: number }>('/tenants/current/settings', { method: 'PUT', body: JSON.stringify({ weekStartDay }) }),
+    onSuccess: (saved) => {
+      setWeekDraft(saved.weekStartDay);
+      setNotice(`Saved. Weeks now start on ${WEEKDAYS[saved.weekStartDay]} across this company's reports.`);
+      queryClient.invalidateQueries({ queryKey: ['me', tenantId] });
+    },
+  });
+
   const save = useMutation({
     mutationFn: (cfg: Config) => backendRequest<Config>('/classification/config', { method: 'PUT', body: JSON.stringify(cfg) }),
     onSuccess: (saved) => {
@@ -61,7 +82,7 @@ export default function AdminPage() {
     },
   });
 
-  const error = config.error || summary.error || save.error || recompute.error;
+  const error = config.error || summary.error || save.error || recompute.error || me.error || saveWeek.error;
   useEffect(() => {
     if (error instanceof BackendApiError && error.status === 401) router.replace('/saas-login');
   }, [error, router]);
@@ -134,6 +155,27 @@ export default function AdminPage() {
             <button className="btn-ghost" onClick={() => { setNotice(''); recompute.mutate(); }} disabled={recompute.isPending}>
               <RefreshCw size={15} /> {recompute.isPending ? 'Regrouping…' : 'Regroup players now'}
             </button>
+          </div>
+        </section>
+
+        {/* ---- Reporting week (which day a week starts on) ---- */}
+        <section className="panel">
+          <div className="webhook-heading"><span><CalendarDays size={20} /></span><div>
+            <h2>Reporting week</h2><p>The day each week begins for “This week / Last week” on the dashboard and reports.</p>
+          </div></div>
+          <div style={{ display: 'grid', gap: 10, maxWidth: 360, marginTop: 8 }}>
+            <label style={{ fontSize: 14, color: '#334155' }}>
+              Week starts on
+              <select value={weekDraft ?? 1} onChange={(e) => setWeekDraft(Number(e.target.value))} style={inputStyle}>
+                {WEEKDAYS.map((name, i) => <option key={i} value={i}>{name}</option>)}
+              </select>
+            </label>
+            <div>
+              <button className="btn-primary" disabled={saveWeek.isPending || weekDraft === null || weekDraft === currentWeekStart}
+                onClick={() => { setNotice(''); if (weekDraft !== null) saveWeek.mutate(weekDraft); }}>
+                {saveWeek.isPending ? 'Saving…' : 'Save week start'}
+              </button>
+            </div>
           </div>
         </section>
 

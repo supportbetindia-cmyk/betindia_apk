@@ -12,6 +12,7 @@ export type BackendTenant = {
   name: string;
   role: string;
   status?: string;
+  weekStartDay?: number; // 0=Sun .. 6=Sat (from /me)
 };
 
 export type BackendMe = {
